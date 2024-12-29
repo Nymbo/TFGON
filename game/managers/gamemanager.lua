@@ -23,6 +23,7 @@ function GameManager:new()
     -- Start each player with 0 current mana
     self.player1.manaCrystals = 0
     self.player2.manaCrystals = 0
+    
     -- Draw some initial cards
     self.player1:drawCard(3)
     self.player2:drawCard(3)
@@ -31,8 +32,7 @@ function GameManager:new()
 end
 
 function GameManager:update(dt)
-    -- For now, no complex turn timer logic. 
-    -- In a real game, we'd handle animations or countdowns here.
+    -- For now, no complex turn timer logic.
 end
 
 function GameManager:draw()
@@ -42,19 +42,19 @@ function GameManager:draw()
         0, 20, love.graphics.getWidth(), "center"
     )
     love.graphics.printf(
-        self.player1.name .. " HP: " .. self.player1.health .. 
+        self.player1.name .. " HP: " .. self.player1.health ..
         " | Mana: " .. self.player1.manaCrystals .. "/" .. self.player1.maxManaCrystals,
         0, 60, love.graphics.getWidth(), "left"
     )
     love.graphics.printf(
-        self.player2.name .. " HP: " .. self.player2.health .. 
+        self.player2.name .. " HP: " .. self.player2.health ..
         " | Mana: " .. self.player2.manaCrystals .. "/" .. self.player2.maxManaCrystals,
         0, 80, love.graphics.getWidth(), "left"
     )
 end
 
 function GameManager:endTurn()
-    -- 1) End actions for the current player
+    -- 1) End actions for the current player (if any).
     local current = self:getCurrentPlayer()
     
     -- 2) Switch player
@@ -70,6 +70,7 @@ end
 
 function GameManager:startTurn()
     local player = self:getCurrentPlayer()
+
     -- Increase mana crystals by 1 (max 10)
     if player.maxManaCrystals < 10 then
         player.maxManaCrystals = player.maxManaCrystals + 1
@@ -87,5 +88,48 @@ function GameManager:getCurrentPlayer()
         return self.player2
     end
 end
+
+----------------------------------------------------------------
+-- NEW: playCardFromHand
+-- This function attempts to play a card from 'player.hand[cardIndex]'.
+-- If the player has enough mana, it places the minion on the board,
+-- or does placeholder logic for spells/weapons.
+----------------------------------------------------------------
+function GameManager:playCardFromHand(player, cardIndex)
+    local card = player.hand[cardIndex]
+    if not card then
+        return  -- no card at that index
+    end
+
+    -- Check if player has enough mana
+    if card.cost <= player.manaCrystals then
+        -- Subtract the mana cost
+        player.manaCrystals = player.manaCrystals - card.cost
+
+        -- Handle card type
+        if card.cardType == "Minion" then
+            -- Place it on the board
+            if player == self.player1 then
+                table.insert(self.board.player1Minions, card)
+            else
+                table.insert(self.board.player2Minions, card)
+            end
+
+        elseif card.cardType == "Spell" then
+            -- Placeholder for actual spell effects
+            print("Spell played: " .. card.name)
+
+        elseif card.cardType == "Weapon" then
+            -- Placeholder for actual weapon logic
+            print("Weapon equipped: " .. card.name)
+        end
+
+        -- Remove card from the hand
+        table.remove(player.hand, cardIndex)
+    else
+        print("Not enough mana to play " .. card.name)
+    end
+end
+----------------------------------------------------------------
 
 return GameManager
