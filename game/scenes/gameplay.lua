@@ -1,89 +1,51 @@
 -- game/scenes/gameplay.lua
--- The main in-game scene, showing board + hand + text from GameManager.
+-- Scene responsible for handling the main gameplay loop and drawing the board + hand.
 
 local GameManager = require("game.managers.gamemanager")
 local CardRenderer = require("game.ui.cardrenderer")
+local BoardRenderer = require("game.ui.boardrenderer")
 
--- We'll create a simple BoardRenderer for method #2:
-local BoardRenderer = {}
-
--- Draw each player's minions on the board in two rows
-function BoardRenderer.drawBoard(board)
-    local p1Minions = board.player1Minions
-    local p2Minions = board.player2Minions
-
-    -- Dimensions for minion placeholders
-    local MINION_WIDTH = 80
-    local MINION_HEIGHT = 80
-    local SPACING = 10
-
-    -- Player 1's row (bottom)
-    local totalWidth1 = #p1Minions * (MINION_WIDTH + SPACING)
-    local startX1 = (love.graphics.getWidth() - totalWidth1) / 2
-    local y1 = love.graphics.getHeight()/2 + 50
-
-    for i, minion in ipairs(p1Minions) do
-        local x = startX1 + (i-1)*(MINION_WIDTH + SPACING)
-        -- Draw a placeholder rectangle or image
-        love.graphics.setColor(0.6, 0.8, 0.6, 1)
-        love.graphics.rectangle("fill", x, y1, MINION_WIDTH, MINION_HEIGHT)
-
-        -- Draw the minion's name, stats
-        love.graphics.setColor(0, 0, 0)
-        love.graphics.printf(
-            minion.name .. "\n" .. minion.attack .. "/" .. minion.health,
-            x, y1 + 20, MINION_WIDTH, "center"
-        )
-        love.graphics.setColor(1, 1, 1)
-    end
-
-    -- Player 2's row (top)
-    local totalWidth2 = #p2Minions * (MINION_WIDTH + SPACING)
-    local startX2 = (love.graphics.getWidth() - totalWidth2) / 2
-    local y2 = love.graphics.getHeight()/2 - (MINION_HEIGHT + 50)
-
-    for i, minion in ipairs(p2Minions) do
-        local x = startX2 + (i-1)*(MINION_WIDTH + SPACING)
-        love.graphics.setColor(0.8, 0.6, 0.6, 1)
-        love.graphics.rectangle("fill", x, y2, MINION_WIDTH, MINION_HEIGHT)
-
-        love.graphics.setColor(0, 0, 0)
-        love.graphics.printf(
-            minion.name .. "\n" .. minion.attack .. "/" .. minion.health,
-            x, y2 + 20, MINION_WIDTH, "center"
-        )
-        love.graphics.setColor(1, 1, 1)
-    end
-end
-
-------------------------------------------------
--- Actual Gameplay scene
-------------------------------------------------
 local Gameplay = {}
 Gameplay.__index = Gameplay
 
 function Gameplay:new(changeSceneCallback)
     local self = setmetatable({}, Gameplay)
+
+    -- Create a new GameManager instance
     self.gameManager = GameManager:new()
+
+    -- Store the callback so we can change scenes
     self.changeSceneCallback = changeSceneCallback
+
+    -- Load the background image
+    -- Make sure you have "Nymbo-TFGON/assets/images/background.png" in place.
+    self.background = love.graphics.newImage("assets/images/background.png")
+
     return self
 end
 
 function Gameplay:update(dt)
+    -- Update the game logic (turn timers, etc.) if needed
     self.gameManager:update(dt)
 end
 
 function Gameplay:draw()
-    -- Clear the screen with a dark color or background
-    love.graphics.clear(0.1, 0.1, 0.15, 1)
+    -- 1) Draw the background
+    if self.background then
+        love.graphics.draw(self.background, 0, 0)
+    else
+        -- If no background image loaded for some reason,
+        -- we clear the screen with a simple color
+        love.graphics.clear(0.1, 0.1, 0.15, 1)
+    end
 
-    -- Draw the basic game info (turn, HP, mana)
+    -- 2) Draw text from the game manager (turn info, HP, mana)
     self.gameManager:draw()
 
-    -- Draw the minions on the board (Method #2 approach)
+    -- 3) Draw the board with minions for both players
     BoardRenderer.drawBoard(self.gameManager.board)
 
-    -- Now draw the current player's hand at the bottom
+    -- 4) Draw the current player's hand at the bottom
     local currentPlayer = self.gameManager:getCurrentPlayer()
     local hand = currentPlayer.hand
 
@@ -103,7 +65,7 @@ function Gameplay:keypressed(key)
     -- Press space to end turn
     if key == "space" then
         self.gameManager:endTurn()
-    -- Press escape to return to main menu
+    -- Press escape to go back to main menu
     elseif key == "escape" then
         self.changeSceneCallback("mainmenu")
     end
@@ -111,6 +73,7 @@ end
 
 function Gameplay:mousepressed(x, y, button, istouch, presses)
     if button == 1 then
+        -- Left-click
         local currentPlayer = self.gameManager:getCurrentPlayer()
         local hand = currentPlayer.hand
 
@@ -121,12 +84,12 @@ function Gameplay:mousepressed(x, y, button, istouch, presses)
         local cardY = love.graphics.getHeight() - cardHeight - 20
 
         for i, card in ipairs(hand) do
-            local cardX = startX + (i-1)*(cardWidth + spacing)
-            -- Check if the click is within this card's rectangle
+            local cardX = startX + (i - 1) * (cardWidth + spacing)
             if x >= cardX and x <= cardX + cardWidth and
                y >= cardY and y <= cardY + cardHeight then
 
-                -- Play that card (if mana is sufficient)
+                -- If the player can afford it, this will remove it from hand and
+                -- place it on the board (for Minions), or do placeholder logic for Spells/Weapons.
                 self.gameManager:playCardFromHand(currentPlayer, i)
                 break
             end
