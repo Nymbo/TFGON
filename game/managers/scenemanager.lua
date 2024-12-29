@@ -1,17 +1,12 @@
 -- game/managers/scenemanager.lua
--- Manages which scene is currently active.
 
 local SceneManager = {
     currentScene = nil
 }
 
 function SceneManager:changeScene(sceneName)
-    -- We only require the scene modules here *when* we need them,
-    -- not at the top of the file, to avoid circular references.
-
     if sceneName == "mainmenu" then
         local MainMenu = require("game.scenes.mainmenu")
-        -- Pass a function to the scene so it can change scenes
         self.currentScene = MainMenu:new(function(newScene)
             self:changeScene(newScene)
         end)
@@ -40,6 +35,13 @@ end
 function SceneManager:keypressed(key)
     if self.currentScene and self.currentScene.keypressed then
         self.currentScene:keypressed(key)
+    end
+end
+
+-- NEW: Pass mouse click events to the current scene
+function SceneManager:mousepressed(x, y, button, istouch, presses)
+    if self.currentScene and self.currentScene.mousepressed then
+        self.currentScene:mousepressed(x, y, button, istouch, presses)
     end
 end
 
