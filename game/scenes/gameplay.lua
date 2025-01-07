@@ -18,7 +18,6 @@ function Gameplay:new(changeSceneCallback)
     self.changeSceneCallback = changeSceneCallback
 
     -- Load the background image
-    -- Make sure you have "Nymbo-TFGON/assets/images/background.png" in place.
     self.background = love.graphics.newImage("assets/images/background.png")
 
     return self

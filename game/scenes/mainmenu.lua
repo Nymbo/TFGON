@@ -9,7 +9,7 @@ function MainMenu:new(changeSceneCallback)
 
     self.changeSceneCallback = changeSceneCallback
 
-    self.title = "Hearthstone-Style TCG Prototype"
+    self.title = "The Fine Game of Nil"
     self.menuOptions = { "Play", "Exit" }
     self.selectedIndex = 1
 
