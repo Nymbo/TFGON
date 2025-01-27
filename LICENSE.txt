@@ -1,0 +1,31 @@
+DAE Ventures Non-Commercial License
+
+Copyright (c) 2025 DAE Ventures, LLC
+
+1. Definitions
+"Software" means the content in this repository, including code, text, graphics, sounds, images, and other files.
+"You" means the individual or entity using the Software.
+"DAE Ventures" means the original creator of the Software.
+"Fork" means creating a personal copy of another user's repository.
+
+2. Grant of Rights
+DAE Ventures grants you a worldwide, royalty-free, non-exclusive, perpetual license to use the Software for personal and non-commercial purposes. This includes using, copying, modifying, merging, publishing, and distributing the Software for non-commercial purposes.
+
+3. Redistribution
+You may not distribute or sell the Software or any derivative works without permission from DAE Ventures. Any allowed redistribution must use this license. Unauthorized distribution is prohibited and will end this license.
+
+4. Commercial Use
+Using the Software for commercial purposes, including paid software support, is forbidden without written approval from DAE Ventures. This applies to both for-profit and non-profit organizations handling money.
+
+DAE Ventures may agree to a share of profits for commercial use. They have the main negotiating position and can end any commercial use agreement at any time.
+
+Unauthorized commercial use is prohibited and will immediately end this license. DAE Ventures may take legal action for breaches, including litigation. The offender may be responsible for damages. Non-compliance is serious and could have major legal consequences.
+
+5. Forking & Personal Use
+You can fork and modify the Software for personal use. You can't distribute or create derivative works from your changes without DAE Ventures' permission. All changes must follow this license.
+
+6. Liability
+DAE Ventures provides the Software "as is" without any warranty. They're not liable for any claims, damages, or other liability related to the Software or its use. You use the Software at your own risk.
+
+7. Governing Law
+This license follows the laws where DAE Ventures is located. Any disputes will be resolved in courts there.

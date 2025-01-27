@@ -1,6 +1,6 @@
 # The Fine Game of Nil (TFGON)
 
-A Hearthstone-inspired card game built with LÖVE2D framework.
+A trading card game built with LÖVE2D framework.
 
 ## Description
 
@@ -11,7 +11,6 @@ The Fine Game of Nil is a turn-based digital card game where two players battle 
 - Turn-based gameplay with mana crystal system
 - Different card types (Minions, Spells, Weapons)
 - Interactive card placement and battlefield management
-- Clean, modern UI inspired by popular digital card games
 
 ## Prerequisites
 
@@ -94,10 +93,4 @@ The game is built using the LÖVE2D framework and pure Lua. Key components:
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Acknowledgments
-
-- Inspired by Hearthstone and other digital card games
-- Built with the LÖVE2D framework (https://love2d.org/)
-- Special thanks to the LÖVE2D community
+This project is licensed under the DAE Ventures Non-Commercial License - see the LICENSE file for details.
