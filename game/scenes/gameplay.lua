@@ -55,11 +55,13 @@ function Gameplay:draw()
     end
     love.graphics.setColor(1, 1, 1, 1)
     
-    -- Draw the board state
+    -- Draw the board state with attack states
     BoardRenderer.drawBoard(
         self.gameManager.board,
         self.gameManager.player1,
-        self.gameManager.player2
+        self.gameManager.player2,
+        self.selectedAttacker,
+        self.gameManager:getCurrentPlayer()
     )
     
     -- Draw the current player's hand
@@ -90,6 +92,13 @@ function Gameplay:draw()
     -- Button text
     love.graphics.setColor(END_TURN_BUTTON.colors.text)
     love.graphics.printf("End Turn", buttonX, buttonY + 10, END_TURN_BUTTON.width, "center")
+    
+    -- Draw attack cursor
+    if self.selectedAttacker then
+        love.graphics.setColor(0, 1, 0, 0.5)  -- Green glow
+        love.graphics.circle("fill", love.mouse.getX(), love.mouse.getY(), 10)
+        love.graphics.setColor(1, 1, 1, 1)
+    end
     
     -- Reset color
     love.graphics.setColor(1, 1, 1, 1)
@@ -170,7 +179,7 @@ function Gameplay:mousepressed(x, y, button, istouch, presses)
             for i, minion in ipairs(targetMinions) do
                 local minionX = targetStartX + (i-1)*(MINION_WIDTH + SPACING)
                 if self:isPointInRect(x, y, minionX, targetMinionY, MINION_WIDTH, MINION_HEIGHT) then
-                    self:resolveAttack(self.selectedAttacker, {type = "minion", minion = minion, index = i})
+                    self:resolveAttack(self.selectedAttacker, {type = "minion", minion = minion, index = i, player = targetPlayer})
                     self.selectedAttacker = nil
                     return
                 end
@@ -179,7 +188,7 @@ function Gameplay:mousepressed(x, y, button, istouch, presses)
             -- Check hero target
             local targetHeroY = isPlayer1 and 10 or (love.graphics.getHeight() - 40)
             if self:isPointInRect(x, y, 10, targetHeroY, love.graphics.getWidth()-20, 30) then
-                self:resolveAttack(self.selectedAttacker, {type = "hero"})
+                self:resolveAttack(self.selectedAttacker, {type = "hero", player = targetPlayer})
                 self.selectedAttacker = nil
                 return
             end
@@ -196,24 +205,26 @@ function Gameplay:resolveAttack(attacker, target)
     if attacker.type == "minion" then
         local minion = attacker.minion
         if target.type == "hero" then
-            local enemy = gameManager:getEnemyPlayer(currentPlayer)
+            local enemy = target.player
             enemy.health = enemy.health - minion.attack
             minion.canAttack = false
-        else
+        elseif target.type == "minion" then
             local targetMinion = target.minion
             targetMinion.currentHealth = targetMinion.currentHealth - minion.attack
             minion.currentHealth = minion.currentHealth - targetMinion.attack
             
             -- Remove dead minions
+            local attackerMinions = attacker.player == gameManager.player1 and 
+                gameManager.board.player1Minions or gameManager.board.player2Minions
+            local targetMinions = target.player == gameManager.player1 and 
+                gameManager.board.player1Minions or gameManager.board.player2Minions
+            
             if targetMinion.currentHealth <= 0 then
-                local enemyMinions = gameManager:getEnemyPlayer(currentPlayer) == gameManager.player1 and 
-                    gameManager.board.player1Minions or gameManager.board.player2Minions
-                table.remove(enemyMinions, target.index)
+                table.remove(targetMinions, target.index)
             end
             
             if minion.currentHealth <= 0 then
-                table.remove(attacker.player == gameManager.player1 and 
-                    gameManager.board.player1Minions or gameManager.board.player2Minions, attacker.index)
+                table.remove(attackerMinions, attacker.index)
             end
         end
     elseif attacker.type == "hero" and currentPlayer.weapon then
