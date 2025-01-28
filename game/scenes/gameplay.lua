@@ -21,11 +21,34 @@ local MINION_WIDTH = 80
 local MINION_HEIGHT = 100
 local SPACING = 10
 
+--------------------------------------------------
+-- Helper function to scale and center a background
+-- image so that it covers the entire screen area.
+--------------------------------------------------
+local function drawScaledBackground(image, alpha)
+    alpha = alpha or 1
+    local windowW, windowH = love.graphics.getWidth(), love.graphics.getHeight()
+    local bgW, bgH = image:getWidth(), image:getHeight()
+
+    -- "Cover" style scaling
+    local scale = math.max(windowW / bgW, windowH / bgH)
+
+    -- Calculate offsets to center the image
+    local offsetX = (windowW - bgW * scale) / 2
+    local offsetY = (windowH - bgH * scale) / 2
+
+    love.graphics.setColor(1, 1, 1, alpha)
+    love.graphics.draw(image, offsetX, offsetY, 0, scale, scale)
+    love.graphics.setColor(1, 1, 1, 1)  -- reset color
+end
+
 function Gameplay:new(changeSceneCallback)
     local self = setmetatable({}, Gameplay)
     
     self.gameManager = GameManager:new()
     self.changeSceneCallback = changeSceneCallback
+
+    -- Load a background image for the board (ensure it exists in 'assets/images/')
     self.background = love.graphics.newImage("assets/images/background.png")
     
     -- Track button state
@@ -37,31 +60,27 @@ end
 
 function Gameplay:update(dt)
     self.gameManager:update(dt)
-    
+
     -- Update end turn button hover state
     local mx, my = love.mouse.getPosition()
     local buttonX = love.graphics.getWidth() - END_TURN_BUTTON.width - 20
     local buttonY = love.graphics.getHeight() / 2 - END_TURN_BUTTON.height / 2
     
     self.endTurnHovered = mx >= buttonX and mx <= buttonX + END_TURN_BUTTON.width and
-                         my >= buttonY and my <= buttonY + END_TURN_BUTTON.height
+                          my >= buttonY and my <= buttonY + END_TURN_BUTTON.height
 end
 
 function Gameplay:draw()
-    -- Draw background at 50% opacity
-    love.graphics.setColor(1, 1, 1, 0.5)
+    -- Draw scaled, centered background at 50% opacity
     if self.background then
-        love.graphics.draw(self.background, 0, 0)
+        drawScaledBackground(self.background, 0.5)
     end
-    love.graphics.setColor(1, 1, 1, 1)
-    
-    -- Draw the board state with attack states
+
+    -- Draw the board state (player info, minions, etc.)
     BoardRenderer.drawBoard(
         self.gameManager.board,
         self.gameManager.player1,
-        self.gameManager.player2,
-        self.selectedAttacker,
-        self.gameManager:getCurrentPlayer()
+        self.gameManager.player2
     )
     
     -- Draw the current player's hand
@@ -75,7 +94,7 @@ function Gameplay:draw()
     
     for i, card in ipairs(hand) do
         local cardX = startX + (i - 1) * (cardWidth + 10)
-        local isPlayable = card.cost <= currentPlayer.manaCrystals
+        local isPlayable = (card.cost <= currentPlayer.manaCrystals)
         CardRenderer.drawCard(card, cardX, cardY, isPlayable)
     end
     
@@ -84,21 +103,23 @@ function Gameplay:draw()
     local buttonY = love.graphics.getHeight() / 2 - END_TURN_BUTTON.height / 2
     
     -- Button background
-    love.graphics.setColor(self.endTurnHovered and END_TURN_BUTTON.colors.hover or 
-                          END_TURN_BUTTON.colors.normal)
+    love.graphics.setColor(
+        self.endTurnHovered and END_TURN_BUTTON.colors.hover or 
+        END_TURN_BUTTON.colors.normal
+    )
     love.graphics.rectangle("fill", buttonX, buttonY, END_TURN_BUTTON.width, 
-                          END_TURN_BUTTON.height, 5, 5)
+                            END_TURN_BUTTON.height, 5, 5)
     
     -- Button text
     love.graphics.setColor(END_TURN_BUTTON.colors.text)
     love.graphics.printf("End Turn", buttonX, buttonY + 10, END_TURN_BUTTON.width, "center")
     
-    -- Draw attack cursor
-    if self.selectedAttacker then
-        love.graphics.setColor(0, 1, 0, 0.5)  -- Green glow
-        love.graphics.circle("fill", love.mouse.getX(), love.mouse.getY(), 10)
-        love.graphics.setColor(1, 1, 1, 1)
-    end
+    -- Turn indicator text below the button
+    local turnIndicatorY = buttonY + END_TURN_BUTTON.height + 10
+    local currentTurnText = (self.gameManager.currentPlayer == 1) and "Player 1's turn" 
+                                                             or "Player 2's turn"
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.printf(currentTurnText, buttonX, turnIndicatorY, END_TURN_BUTTON.width, "center")
     
     -- Reset color
     love.graphics.setColor(1, 1, 1, 1)
@@ -129,15 +150,14 @@ function Gameplay:mousepressed(x, y, button, istouch, presses)
             local cardX = startX + (i - 1) * (cardWidth + 10)
             if x >= cardX and x <= cardX + cardWidth and
                y >= cardY and y <= cardY + cardHeight and
-               card.cost <= currentPlayer.manaCrystals then
+               (card.cost <= currentPlayer.manaCrystals) then
                 self.gameManager:playCardFromHand(currentPlayer, i)
                 break
             end
         end
 
         -- Attack handling
-        local currentPlayer = self.gameManager:getCurrentPlayer()
-        local isPlayer1 = currentPlayer == self.gameManager.player1
+        local isPlayer1 = (currentPlayer == self.gameManager.player1)
         
         if not self.selectedAttacker then
             -- Check minion clicks
@@ -145,7 +165,7 @@ function Gameplay:mousepressed(x, y, button, istouch, presses)
             local startX = (love.graphics.getWidth() - (#minions * (MINION_WIDTH + SPACING))) / 2
             
             for i, minion in ipairs(minions) do
-                local minionX = startX + (i-1)*(MINION_WIDTH + SPACING)
+                local minionX = startX + (i - 1) * (MINION_WIDTH + SPACING)
                 if self:isPointInRect(x, y, minionX, minionY, MINION_WIDTH, MINION_HEIGHT) then
                     if minion.canAttack then
                         self.selectedAttacker = {
@@ -162,24 +182,28 @@ function Gameplay:mousepressed(x, y, button, istouch, presses)
             -- Check hero attack
             if currentPlayer.weapon and not currentPlayer.heroAttacked then
                 local heroY = isPlayer1 and (love.graphics.getHeight() - 40) or 10
-                if self:isPointInRect(x, y, 10, heroY, love.graphics.getWidth()-20, 30) then
-                    self.selectedAttacker = {type = "hero", player = currentPlayer}
+                if self:isPointInRect(x, y, 10, heroY, love.graphics.getWidth() - 20, 30) then
+                    self.selectedAttacker = {
+                        type = "hero",
+                        player = currentPlayer
+                    }
                 end
             end
         else
             -- Handle target selection
             local targetPlayer = self.gameManager:getEnemyPlayer(currentPlayer)
-            local targetMinions = targetPlayer == self.gameManager.player1 and 
-                self.gameManager.board.player1Minions or self.gameManager.board.player2Minions
+            local targetMinions = (targetPlayer == self.gameManager.player1)
+                and self.gameManager.board.player1Minions
+                or self.gameManager.board.player2Minions
             
             -- Check minion targets
             local _, targetMinionY = self:getPlayerMinionArea(targetPlayer)
             local targetStartX = (love.graphics.getWidth() - (#targetMinions * (MINION_WIDTH + SPACING))) / 2
             
             for i, minion in ipairs(targetMinions) do
-                local minionX = targetStartX + (i-1)*(MINION_WIDTH + SPACING)
+                local minionX = targetStartX + (i - 1) * (MINION_WIDTH + SPACING)
                 if self:isPointInRect(x, y, minionX, targetMinionY, MINION_WIDTH, MINION_HEIGHT) then
-                    self:resolveAttack(self.selectedAttacker, {type = "minion", minion = minion, index = i, player = targetPlayer})
+                    self:resolveAttack(self.selectedAttacker, {type = "minion", minion = minion, index = i})
                     self.selectedAttacker = nil
                     return
                 end
@@ -187,8 +211,8 @@ function Gameplay:mousepressed(x, y, button, istouch, presses)
 
             -- Check hero target
             local targetHeroY = isPlayer1 and 10 or (love.graphics.getHeight() - 40)
-            if self:isPointInRect(x, y, 10, targetHeroY, love.graphics.getWidth()-20, 30) then
-                self:resolveAttack(self.selectedAttacker, {type = "hero", player = targetPlayer})
+            if self:isPointInRect(x, y, 10, targetHeroY, love.graphics.getWidth() - 20, 30) then
+                self:resolveAttack(self.selectedAttacker, {type = "hero"})
                 self.selectedAttacker = nil
                 return
             end
@@ -205,26 +229,28 @@ function Gameplay:resolveAttack(attacker, target)
     if attacker.type == "minion" then
         local minion = attacker.minion
         if target.type == "hero" then
-            local enemy = target.player
+            local enemy = gameManager:getEnemyPlayer(currentPlayer)
             enemy.health = enemy.health - minion.attack
             minion.canAttack = false
-        elseif target.type == "minion" then
+        else
             local targetMinion = target.minion
             targetMinion.currentHealth = targetMinion.currentHealth - minion.attack
             minion.currentHealth = minion.currentHealth - targetMinion.attack
             
             -- Remove dead minions
-            local attackerMinions = attacker.player == gameManager.player1 and 
-                gameManager.board.player1Minions or gameManager.board.player2Minions
-            local targetMinions = target.player == gameManager.player1 and 
-                gameManager.board.player1Minions or gameManager.board.player2Minions
-            
             if targetMinion.currentHealth <= 0 then
-                table.remove(targetMinions, target.index)
+                local enemyMinions = (gameManager:getEnemyPlayer(currentPlayer) == gameManager.player1)
+                    and gameManager.board.player1Minions
+                    or gameManager.board.player2Minions
+                table.remove(enemyMinions, target.index)
             end
             
             if minion.currentHealth <= 0 then
-                table.remove(attackerMinions, attacker.index)
+                table.remove(
+                    attacker.player == gameManager.player1 and gameManager.board.player1Minions
+                    or gameManager.board.player2Minions,
+                    attacker.index
+                )
             end
         end
     elseif attacker.type == "hero" and currentPlayer.weapon then
@@ -252,11 +278,12 @@ end
 
 -- Helper functions
 function Gameplay:getPlayerMinionArea(player)
-    local isPlayer1 = player == self.gameManager.player1
-    local yPos = isPlayer1 and math.floor(love.graphics.getHeight() * 0.6) + 10
+    local isPlayer1 = (player == self.gameManager.player1)
+    local yPos = isPlayer1
+        and math.floor(love.graphics.getHeight() * 0.6) + 10
         or math.floor(love.graphics.getHeight() * 0.25) + 10
     local minions = isPlayer1 and self.gameManager.board.player1Minions 
-        or self.gameManager.board.player2Minions
+                    or self.gameManager.board.player2Minions
     return minions, yPos
 end
 
