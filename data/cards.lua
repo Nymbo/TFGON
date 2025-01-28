@@ -1,7 +1,4 @@
 -- data/cards.lua
--- A simple Lua table defining placeholder cards.
--- We'll keep it super basic for now.
-
 return {
     {
         name = "Murloc Raider",
@@ -22,13 +19,22 @@ return {
         cardType = "Weapon",
         cost = 2,
         attack = 3,
-        health = 2  -- Durability for a weapon
+        durability = 2,
+        effect = function(gameManager, player)
+            player.weapon = {
+                attack = 3,
+                durability = 2
+            }
+        end
     },
     {
         name = "Fireball",
         cardType = "Spell",
-        cost = 4
-        -- Potential effect: deal 6 damage
+        cost = 4,
+        effect = function(gameManager, player)
+            local enemy = gameManager:getEnemyPlayer(player)
+            enemy.health = enemy.health - 6
+        end
     },
     {
         name = "Boulderfist Ogre",

@@ -49,7 +49,7 @@ local function drawMinion(minion, x, y)
     -- Draw attack/health
     love.graphics.printf(tostring(minion.attack), x + 5, y + MINION_HEIGHT - 20, 
                         20, "left")
-    love.graphics.printf(tostring(minion.health), x + MINION_WIDTH - 25, 
+    love.graphics.printf(tostring(minion.currentHealth), x + MINION_WIDTH - 25, 
                         y + MINION_HEIGHT - 20, 20, "right")
 end
 

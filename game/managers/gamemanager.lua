@@ -1,6 +1,4 @@
 -- game/managers/gamemanager.lua
--- Manages the turn cycle, players, board state, and card interactions.
-
 local Player = require("game.core.player")
 local Board = require("game.core.board")
 
@@ -82,6 +80,13 @@ function GameManager:startTurn()
 
     -- Draw a card at the start of turn
     player:drawCard(1)
+    player.heroAttacked = false
+    
+    -- Reset minion attack status
+    local minions = (player == self.player1) and self.board.player1Minions or self.board.player2Minions
+    for _, minion in ipairs(minions) do
+        minion.canAttack = true
+    end
 end
 
 function GameManager:getCurrentPlayer()
@@ -89,6 +94,14 @@ function GameManager:getCurrentPlayer()
         return self.player1
     else
         return self.player2
+    end
+end
+
+function GameManager:getEnemyPlayer(player)
+    if player == self.player1 then
+        return self.player2
+    else
+        return self.player1
     end
 end
 
@@ -108,26 +121,41 @@ function GameManager:playCardFromHand(player, cardIndex)
         player.manaCrystals = player.manaCrystals - card.cost
 
         if card.cardType == "Minion" then
+            local minion = {
+                name = card.name,
+                attack = card.attack,
+                maxHealth = card.health,
+                currentHealth = card.health,
+                canAttack = false
+            }
             if player == self.player1 then
-                table.insert(self.board.player1Minions, card)
+                table.insert(self.board.player1Minions, minion)
             else
-                table.insert(self.board.player2Minions, card)
+                table.insert(self.board.player2Minions, minion)
             end
 
-        elseif card.cardType == "Spell" then
-            -- Placeholder for spell effect
-            print("Spell cast: " .. (card.name or "Unknown Spell"))
+        elseif card.cardType == "Spell" and card.effect then
+            card.effect(self, player)
 
-        elseif card.cardType == "Weapon" then
-            -- Placeholder for weapon logic
-            print("Weapon equipped: " .. (card.name or "Unknown Weapon"))
+        elseif card.cardType == "Weapon" and card.effect then
+            card.effect(self, player)
         end
 
         -- Remove the card from the player's hand
         table.remove(player.hand, cardIndex)
+        
+        -- Check win condition
+        if self.player1.health <= 0 or self.player2.health <= 0 then
+            self:endGame()
+        end
     else
         print("Not enough mana to play " .. (card.name or "this card"))
     end
+end
+
+function GameManager:endGame()
+    -- Transition to game over scene (to be implemented)
+    print("Game Over!")
 end
 
 return GameManager

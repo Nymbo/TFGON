@@ -1,6 +1,4 @@
 -- game/core/player.lua
--- Holds data about the player: health, deck, hand, etc.
-
 local Deck = require("game.core.deck")
 
 local Player = {}
@@ -14,6 +12,8 @@ function Player:new(name)
     self.hand = {}                    -- cards in hand
     self.maxManaCrystals = 0
     self.manaCrystals = 0
+    self.weapon = nil
+    self.heroAttacked = false
     return self
 end
 
