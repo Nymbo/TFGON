@@ -10,6 +10,7 @@ The Fine Game of Nil is a turn-based digital card game where two players battle 
 
 - Turn-based gameplay with mana crystal system
 - Different card types (Minions, Spells, Weapons)
+- Modular bonus effects system for minions
 - Interactive card placement and battlefield management
 
 ## Prerequisites
@@ -55,24 +56,6 @@ cd nymbo-tfgon
    - **Minions**: Creatures with Attack/Health stats that can fight
    - **Spells**: One-time effects
    - **Weapons**: Equipment that gives your hero attack power
-
-## Project Structure
-
-```
-nymbo-tfgon/
-├── README.md
-├── conf.lua            # LÖVE configuration
-├── main.lua           # Entry point
-├── assets/           # Game resources
-│   └── images/      # Artwork and sprites
-├── data/            # Game data
-│   └── cards.lua    # Card definitions
-└── game/            # Core game logic
-    ├── core/        # Basic game elements
-    ├── managers/    # Game state management
-    ├── scenes/      # Game screens
-    └── ui/          # Visual components
-```
 
 ## Development
 
