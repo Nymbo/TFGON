@@ -1,41 +1,53 @@
 -- game/ui/cardrenderer.lua
+-- Handles the visual representation of individual cards.
+
+--------------------------------------------------
+-- Table definition for CardRenderer
+--------------------------------------------------
 local CardRenderer = {}
 
--- Constants for card dimensions and styling
-local CARD_WIDTH = 100
-local CARD_HEIGHT = 150
-local COST_CIRCLE_RADIUS = 12
+--------------------------------------------------
+-- Constants for card layout and styling
+--------------------------------------------------
+local CARD_WIDTH = 100          -- Pixel width of a card
+local CARD_HEIGHT = 150         -- Pixel height of a card
+local COST_CIRCLE_RADIUS = 12   -- Radius of the cost circle in the top-left corner
+
+-- Colors used throughout the card drawing process
 local CARD_COLORS = {
-    background = {0.204, 0.286, 0.369, 1},  -- #34495e
-    border = {0.945, 0.768, 0.058, 1},      -- #f1c40f
-    cost = {0.204, 0.596, 0.858, 1},        -- #3498db
+    background = {0.204, 0.286, 0.369, 1},  -- #34495e (a dark bluish color)
+    border = {0.945, 0.768, 0.058, 1},      -- #f1c40f (gold/yellow)
+    cost = {0.204, 0.596, 0.858, 1},        -- #3498db (blue)
     text = {1, 1, 1, 1}                     -- white
 }
 
-----------------------------------------------------------
--- Create a default font for card text. This is LÖVE’s
--- built-in font if you call newFont() with no file path.
--- If you want a different size, adjust the number below.
-----------------------------------------------------------
+--------------------------------------------------
+-- Create a default font for card text. If you want
+-- a larger or smaller font, adjust the number below.
+-- (LÖVE uses a default font if nil is provided, but we
+-- explicitly define a size for consistency.)
+--------------------------------------------------
 local defaultCardFont = love.graphics.newFont(14)
 
--------------------------------------------------------
--- Draw a green "glow" rectangle behind the card if it's
--- playable this turn (i.e., the player has enough mana).
--- Then switch to a default font, draw the card text, and
--- revert back to the old font (the fancy one) afterward.
--------------------------------------------------------
+--------------------------------------------------
+-- drawCard(card, x, y, isPlayable):
+-- Renders a card at position (x, y). If 'isPlayable'
+-- is true, a subtle green glow is drawn behind the card
+-- to signify it can be played. Then the card’s cost,
+-- name, and any additional stats (e.g., attack/health)
+-- are drawn using the default font.
+--------------------------------------------------
 function CardRenderer.drawCard(card, x, y, isPlayable)
-    -- Save the current font (the fancy Inknut Antiqua font).
+    -- Save the current font (potentially a fancy font).
     local oldFont = love.graphics.getFont()
 
-    -- Temporarily switch to default font for card text.
+    -- Temporarily switch to a simpler default font for card text.
     love.graphics.setFont(defaultCardFont)
 
-    -- Draw a green glow if playable
+    -- If the card is playable, draw a green glow behind it
     if isPlayable then
         local glowOffset = 5
-        love.graphics.setColor(0, 1, 0, 0.4)
+        love.graphics.setColor(0, 1, 0, 0.4)  -- a semi-transparent green
         love.graphics.rectangle(
             "fill", 
             x - glowOffset, 
@@ -46,57 +58,89 @@ function CardRenderer.drawCard(card, x, y, isPlayable)
         )
     end
 
-    -- Draw card background
-    local alpha = 1
-    love.graphics.setColor(CARD_COLORS.background[1], CARD_COLORS.background[2],
-                           CARD_COLORS.background[3], alpha)
+    --------------------------------------------------
+    -- Card background
+    --------------------------------------------------
+    local alpha = 1  -- Full opacity
+    love.graphics.setColor(
+        CARD_COLORS.background[1],
+        CARD_COLORS.background[2],
+        CARD_COLORS.background[3],
+        alpha
+    )
     love.graphics.rectangle("fill", x, y, CARD_WIDTH, CARD_HEIGHT, 5, 5)
-    
-    -- Draw card border
-    love.graphics.setColor(CARD_COLORS.border[1], CARD_COLORS.border[2],
-                           CARD_COLORS.border[3], alpha)
+
+    --------------------------------------------------
+    -- Card border
+    --------------------------------------------------
+    love.graphics.setColor(
+        CARD_COLORS.border[1],
+        CARD_COLORS.border[2],
+        CARD_COLORS.border[3],
+        alpha
+    )
     love.graphics.rectangle("line", x, y, CARD_WIDTH, CARD_HEIGHT, 5, 5)
-    
-    -- Draw mana cost circle
-    love.graphics.setColor(CARD_COLORS.cost[1], CARD_COLORS.cost[2],
-                           CARD_COLORS.cost[3], alpha)
+
+    --------------------------------------------------
+    -- Cost circle
+    --------------------------------------------------
+    love.graphics.setColor(
+        CARD_COLORS.cost[1],
+        CARD_COLORS.cost[2],
+        CARD_COLORS.cost[3],
+        alpha
+    )
     love.graphics.circle("fill", x + 15, y + 15, COST_CIRCLE_RADIUS)
-    
-    -- Draw cost number
-    love.graphics.setColor(CARD_COLORS.text[1], CARD_COLORS.text[2],
-                           CARD_COLORS.text[3], alpha)
+
+    -- Draw cost text inside the circle
+    love.graphics.setColor(
+        CARD_COLORS.text[1],
+        CARD_COLORS.text[2],
+        CARD_COLORS.text[3],
+        alpha
+    )
     love.graphics.printf(tostring(card.cost), x + 5, y + 7, 20, "center")
-    
-    -- Draw card name
+
+    --------------------------------------------------
+    -- Card name
+    --------------------------------------------------
     love.graphics.printf(card.name, x + 5, y + 35, CARD_WIDTH - 10, "center")
-    
-    -- Draw stats for minions
+
+    --------------------------------------------------
+    -- If this is a Minion, draw its attack and health
+    --------------------------------------------------
     if card.cardType == "Minion" then
-        -- Draw attack/health at bottom
+        -- Attack in the bottom-left
         love.graphics.printf(
-            tostring(card.attack), 
-            x + 5, 
-            y + CARD_HEIGHT - 20, 
-            30, 
+            tostring(card.attack),
+            x + 5,
+            y + CARD_HEIGHT - 20,
+            30,
             "left"
         )
+
+        -- Health in the bottom-right
         love.graphics.printf(
-            tostring(card.health), 
-            x + CARD_WIDTH - 35, 
-            y + CARD_HEIGHT - 20, 
-            30, 
+            tostring(card.health),
+            x + CARD_WIDTH - 35,
+            y + CARD_HEIGHT - 20,
+            30,
             "right"
         )
     end
-    
-    -- Reset color to white
+
+    -- Reset color to white for subsequent rendering
     love.graphics.setColor(1, 1, 1, 1)
 
-    -- Restore the old font (the fancy one) for everything else.
+    -- Restore the old font to continue drawing with the original style
     love.graphics.setFont(oldFont)
 end
 
--- Get card dimensions for hit testing
+--------------------------------------------------
+-- getCardDimensions():
+-- Returns the width and height of the card, useful
+-- for positioning or collision checks.
+--------------------------------------------------
 function CardRenderer.getCardDimensions()
     return CARD_WIDTH, CARD_HEIGHT
 end
