@@ -1,5 +1,7 @@
 # The Fine Game of Nil (TFGON)
 
+![Main Menu Background](assets/images/mainmenu_background.png)
+
 A trading card game built with LÖVE2D framework.
 
 ## Description
