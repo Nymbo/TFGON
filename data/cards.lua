@@ -10,10 +10,10 @@ return {
     -- Basic Minions
     --------------------------------------------------
     {
-        name = "Murloc Raider",
+        name = "Wisp",
         cardType = "Minion",
-        cost = 1,
-        attack = 2,
+        cost = 0,
+        attack = 1,
         health = 1
     },
     {
@@ -24,10 +24,31 @@ return {
         health = 3
     },
     {
+        name = "Magma Rager",
+        cardType = "Minion",
+        cost = 3,
+        attack = 5,
+        health = 1
+    },
+    {
+        name = "Chillwind Yeti",
+        cardType = "Minion",
+        cost = 4,
+        attack = 4,
+        health = 5
+    },
+    {
         name = "Boulderfist Ogre",
         cardType = "Minion",
         cost = 6,
         attack = 6,
+        health = 7
+    },
+    {
+        name = "War Golem",
+        cardType = "Minion",
+        cost = 7,
+        attack = 7,
         health = 7
     },
 
@@ -57,11 +78,11 @@ return {
     -- Placeholder Minion with BATTLECRY
     --------------------------------------------------
     {
-        name = "Battlecry Goblin",
+        name = "Novice Engineer",
         cardType = "Minion",
-        cost = 3,
-        attack = 2,
-        health = 2,
+        cost = 2,
+        attack = 1,
+        health = 1,
         battlecry = function(gameManager, player)
             -- Example: draw 1 card
             player:drawCard(1)
@@ -71,6 +92,17 @@ return {
     --------------------------------------------------
     -- Placeholder Minion with DEATHRATTLE
     --------------------------------------------------
+    {
+        name = "Loot Hoarder",
+        cardType = "Minion",
+        cost = 2,
+        attack = 2,
+        health = 1,
+        deathrattle = function(gameManager, player)
+            -- Example: Draw 1 card
+            player:drawCard(1)
+        end
+    },
     {
         name = "Haunted Minion",
         cardType = "Minion",
