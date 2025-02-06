@@ -1,81 +1,81 @@
 -- game/scenes/gameplay/combat.lua
--- Handles the logic for attacks between minions/heroes.
--- Now updated to trigger Deathrattle before removing a dead minion.
-
+-- This module now handles grid-based combat between minions.
 local CombatSystem = {}
-
 local EffectManager = require("game.managers.effectmanager")
 
-function CombatSystem.resolveAttack(gameplay, attacker, target)
+-- Helper: Chebyshev distance between two positions
+local function chebyshevDistance(pos1, pos2)
+    return math.max(math.abs(pos1.x - pos2.x), math.abs(pos1.y - pos2.y))
+end
+
+-- Helper: Get reach based on archetype
+local function getReach(archetype)
+    if archetype == "Melee" then
+        return 1
+    elseif archetype == "Magic" then
+        return 2
+    elseif archetype == "Ranged" then
+        return 3
+    else
+        return 1 -- default reach
+    end
+end
+
+function CombatSystem.resolveAttack(gameplay, attackerInfo, targetInfo)
     local gm = gameplay.gameManager
     local currentPlayer = gm:getCurrentPlayer()
 
-    if attacker.type == "minion" then
-        local minion = attacker.minion
-
-        if target.type == "hero" then
+    if attackerInfo.type == "minion" then
+        local attacker = attackerInfo.minion
+        if targetInfo.type == "hero" then
+            -- For hero attacks, we assume the click was valid
             local enemy = gm:getEnemyPlayer(currentPlayer)
-            enemy.health = enemy.health - minion.attack
-            minion.canAttack = false
+            enemy.health = enemy.health - attacker.attack
+            attacker.canAttack = false
+        elseif targetInfo.type == "minion" then
+            local target = targetInfo.minion
+            local reach = getReach(attacker.archetype)
+            local distance = chebyshevDistance(attacker.position, target.position)
+            if distance <= reach then
+                -- Simultaneous combat damage
+                target.currentHealth = target.currentHealth - attacker.attack
+                attacker.currentHealth = attacker.currentHealth - target.attack
 
-        elseif target.type == "minion" then
-            local targetMinion = target.minion
-            targetMinion.currentHealth = targetMinion.currentHealth - minion.attack
-            minion.currentHealth = minion.currentHealth - targetMinion.attack
+                -- Remove target if dead
+                if target.currentHealth <= 0 then
+                    local tx, ty = target.position.x, target.position.y
+                    EffectManager.triggerDeathrattle(target, gm, gm:getEnemyPlayer(currentPlayer))
+                    gm.board:removeMinion(tx, ty)
+                end
 
-            -- Did the target minion die?
-            if targetMinion.currentHealth <= 0 then
-                local enemyMinions = (gm:getEnemyPlayer(currentPlayer) == gm.player1)
-                    and gm.board.player1Minions
-                    or gm.board.player2Minions
-
-                -- Trigger deathrattle before removing
-                EffectManager.triggerDeathrattle(targetMinion, gm, gm:getEnemyPlayer(currentPlayer))
-                table.remove(enemyMinions, target.index)
+                -- Remove attacker if dead
+                if attacker.currentHealth <= 0 then
+                    local ax, ay = attacker.position.x, attacker.position.y
+                    EffectManager.triggerDeathrattle(attacker, gm, currentPlayer)
+                    gm.board:removeMinion(ax, ay)
+                end
+                attacker.canAttack = false
+            else
+                print("Target is out of reach!")
             end
-
-            -- Did the attacking minion die?
-            if minion.currentHealth <= 0 then
-                local myMinions = (attacker.player == gm.player1)
-                    and gm.board.player1Minions
-                    or gm.board.player2Minions
-
-                EffectManager.triggerDeathrattle(minion, gm, attacker.player)
-                table.remove(myMinions, attacker.index)
-            end
-
-            minion.canAttack = false
         end
 
-    elseif attacker.type == "hero" then
-        -- The hero must have a weapon to attack
+    elseif attackerInfo.type == "hero" then
         local weapon = currentPlayer.weapon
         if weapon then
             currentPlayer.heroAttacked = true
-
-            if target.type == "hero" then
+            if targetInfo.type == "hero" then
                 local enemy = gm:getEnemyPlayer(currentPlayer)
                 enemy.health = enemy.health - weapon.attack
-            elseif target.type == "minion" then
-                -- If you want hero vs. minion combat to be 2-way, you can add logic here
-                local targetMinion = target.minion
-                targetMinion.currentHealth = targetMinion.currentHealth - weapon.attack
-
-                -- If that kills the minion, trigger deathrattle and remove it
-                if targetMinion.currentHealth <= 0 then
-                    local enemyMinions = (gm:getEnemyPlayer(currentPlayer) == gm.player1)
-                        and gm.board.player1Minions
-                        or gm.board.player2Minions
-
-                    EffectManager.triggerDeathrattle(targetMinion, gm, gm:getEnemyPlayer(currentPlayer))
-                    table.remove(enemyMinions, target.index)
+            elseif targetInfo.type == "minion" then
+                local target = targetInfo.minion
+                target.currentHealth = target.currentHealth - weapon.attack
+                if target.currentHealth <= 0 then
+                    local tx, ty = target.position.x, target.position.y
+                    EffectManager.triggerDeathrattle(target, gm, gm:getEnemyPlayer(currentPlayer))
+                    gm.board:removeMinion(tx, ty)
                 end
-
-                -- Optionally, you could also deal damage to the hero if you want minion retaliation
-                -- e.g. currentPlayer.health = currentPlayer.health - targetMinion.attack
             end
-
-            -- Reduce weapon durability
             weapon.durability = weapon.durability - 1
             if weapon.durability <= 0 then
                 currentPlayer.weapon = nil
@@ -83,7 +83,6 @@ function CombatSystem.resolveAttack(gameplay, attacker, target)
         end
     end
 
-    -- Check if either hero is dead
     if gm.player1.health <= 0 or gm.player2.health <= 0 then
         gm:endGame()
     end

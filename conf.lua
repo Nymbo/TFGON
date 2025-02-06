@@ -10,8 +10,8 @@ function love.conf(t)
     t.window.title = "The Fine Game of Nil"
     
     -- Set the default window width and height
-    t.window.width = 1280
-    t.window.height = 720
+    t.window.width = 1920
+    t.window.height = 1080
     
     -- Enable the console window for debugging/logging (on Windows)
     -- If set to false, no separate console window is shown.
