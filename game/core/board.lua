@@ -1,28 +1,71 @@
 -- game/core/board.lua
--- Manages the state of the board, specifically
--- where each player's minions are placed.
-
---------------------------------------------------
--- Table definition for Board
---------------------------------------------------
+-- This module now implements a 7x6 grid board.
 local Board = {}
 Board.__index = Board
 
---------------------------------------------------
--- Constructor for the Board.
--- Initializes two lists: one for Player 1's minions
--- and another for Player 2's minions.
---------------------------------------------------
 function Board:new()
     local self = setmetatable({}, Board)
-    
-    -- Track Player 1's minions on the field
-    self.player1Minions = {}
-    
-    -- Track Player 2's minions on the field
-    self.player2Minions = {}
-    
+    self.cols = 7
+    self.rows = 6
+    -- Initialize a 2D array for tiles: tiles[y][x]
+    self.tiles = {}
+    for y = 1, self.rows do
+        self.tiles[y] = {}
+        for x = 1, self.cols do
+            self.tiles[y][x] = nil
+        end
+    end
     return self
+end
+
+function Board:isEmpty(x, y)
+    return self.tiles[y] and self.tiles[y][x] == nil
+end
+
+function Board:placeMinion(minion, x, y)
+    if self:isEmpty(x, y) then
+        self.tiles[y][x] = minion
+        minion.position = { x = x, y = y }
+        return true
+    else
+        return false
+    end
+end
+
+function Board:moveMinion(fromX, fromY, toX, toY)
+    if self.tiles[fromY] and self.tiles[fromY][fromX] and self:isEmpty(toX, toY) then
+        local minion = self.tiles[fromY][fromX]
+        self.tiles[fromY][fromX] = nil
+        self.tiles[toY][toX] = minion
+        minion.position = { x = toX, y = toY }
+        return true
+    end
+    return false
+end
+
+function Board:getMinionAt(x, y)
+    if self.tiles[y] then
+        return self.tiles[y][x]
+    end
+    return nil
+end
+
+function Board:removeMinion(x, y)
+    if self.tiles[y] then
+        self.tiles[y][x] = nil
+    end
+end
+
+-- Helper to iterate over all minions on the board
+function Board:forEachMinion(callback)
+    for y = 1, self.rows do
+        for x = 1, self.cols do
+            local minion = self.tiles[y][x]
+            if minion then
+                callback(minion, x, y)
+            end
+        end
+    end
 end
 
 return Board

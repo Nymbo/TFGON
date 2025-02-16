@@ -1,55 +1,62 @@
 -- data/cards.lua
--- Updated to remove inline effect functions for spells/weapons
--- and reference a string key like "FireballEffect" or "FieryWarAxeEffect"
--- that is implemented in effectmanager.lua.
---
--- We also add two placeholder minions with Battlecry and Deathrattle.
-
+-- Card data now includes "movement" and "archetype" for minions.
 return {
     --------------------------------------------------
-    -- Basic Minions
+    -- Basic Minions (with movement and archetype)
     --------------------------------------------------
     {
         name = "Wisp",
         cardType = "Minion",
         cost = 0,
         attack = 1,
-        health = 1
+        health = 1,
+        movement = 2,
+        archetype = "Melee"
     },
     {
         name = "River Crocolisk",
         cardType = "Minion",
         cost = 2,
         attack = 2,
-        health = 3
+        health = 3,
+        movement = 2,
+        archetype = "Melee"
     },
     {
         name = "Magma Rager",
         cardType = "Minion",
         cost = 3,
         attack = 5,
-        health = 1
+        health = 1,
+        movement = 1,
+        archetype = "Magic"
     },
     {
         name = "Chillwind Yeti",
         cardType = "Minion",
         cost = 4,
         attack = 4,
-        health = 5
+        health = 5,
+        movement = 2,
+        archetype = "Melee"
     },
     {
         name = "Boulderfist Ogre",
         cardType = "Minion",
         cost = 6,
         attack = 6,
-        health = 7
+        health = 7,
+        movement = 1,
+        archetype = "Melee"
     },
     {
         name = "War Golem",
         cardType = "Minion",
         cost = 7,
         attack = 7,
-        health = 7
+        health = 7,
+        movement = 1,
+        archetype = "Melee"
     },
 
     --------------------------------------------------
@@ -59,8 +66,8 @@ return {
         name = "Fiery War Axe",
         cardType = "Weapon",
         cost = 2,
-        attack = 3,       -- purely informational
-        durability = 2,   -- purely informational
+        attack = 3,
+        durability = 2,
         effectKey = "FieryWarAxeEffect"
     },
 
@@ -83,6 +90,8 @@ return {
         cost = 2,
         attack = 1,
         health = 1,
+        movement = 2,
+        archetype = "Magic",
         battlecry = function(gameManager, player)
             -- Example: draw 1 card
             player:drawCard(1)
@@ -98,6 +107,8 @@ return {
         cost = 2,
         attack = 2,
         health = 1,
+        movement = 2,
+        archetype = "Melee",
         deathrattle = function(gameManager, player)
             -- Example: Draw 1 card
             player:drawCard(1)
@@ -109,6 +120,8 @@ return {
         cost = 2,
         attack = 1,
         health = 2,
+        movement = 2,
+        archetype = "Ranged",
         deathrattle = function(gameManager, player)
             -- Example: deal 2 damage to enemy hero
             local enemy = gameManager:getEnemyPlayer(player)
