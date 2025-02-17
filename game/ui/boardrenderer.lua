@@ -1,12 +1,12 @@
 -- game/ui/boardrenderer.lua
--- Renders the grid-based board with spawn zones and minions.
+-- Renders the grid-based board with spawn zones, minions, towers, and now cell coordinate labels.
 -- Also uses a default simple font when drawing minion info.
 -- Minions that are able to attack are highlighted with a green outline.
 local BoardRenderer = {}
 
-local TILE_SIZE = 100  -- Increased from 80 to 100 for better visibility
-local BOARD_COLS = 9   -- Updated from 7 to 9
-local BOARD_ROWS = 9   -- Updated from 6 to 9
+local TILE_SIZE = 100  -- Updated tile size for better visibility
+local BOARD_COLS = 9   -- Updated to 9 columns
+local BOARD_ROWS = 9   -- Updated to 9 rows
 local boardWidth = TILE_SIZE * BOARD_COLS
 local boardHeight = TILE_SIZE * BOARD_ROWS
 local boardX = (love.graphics.getWidth() - boardWidth) / 2
@@ -14,6 +14,8 @@ local boardY = 50
 
 -- Define a default board font (without the custom fancy font)
 local defaultBoardFont = love.graphics.newFont(12)
+-- Define a small font for cell labels
+local cellLabelFont = love.graphics.newFont(10)
 
 local COLORS = {
     gridLine = {0, 0, 0, 1},
@@ -49,15 +51,16 @@ local function drawMinion(minion, cellX, cellY)
 
     -- If the minion is able to attack, draw a green outline.
     if minion.canAttack then
-         love.graphics.setColor(0, 1, 0, 1)  -- green color
+         love.graphics.setColor(COLORS.selectedOutline)
          love.graphics.setLineWidth(3)
          love.graphics.rectangle("line", x, y, TILE_SIZE, TILE_SIZE, 5, 5)
          love.graphics.setLineWidth(1)
     end
 end
 
-function BoardRenderer.drawBoard(board, currentPlayer, selectedMinion)
-    -- Draw the grid cells and highlight spawn zones.
+-- Updated function signature to accept both players for tower rendering.
+function BoardRenderer.drawBoard(board, player1, player2, selectedMinion)
+    -- Draw the grid cells, spawn zones, and cell coordinate labels.
     for y = 1, BOARD_ROWS do
         for x = 1, BOARD_COLS do
             local cellX = boardX + (x - 1) * TILE_SIZE
@@ -76,6 +79,15 @@ function BoardRenderer.drawBoard(board, currentPlayer, selectedMinion)
             end
             love.graphics.setColor(COLORS.gridLine)
             love.graphics.rectangle("line", cellX, cellY, TILE_SIZE, TILE_SIZE)
+            
+            -- Draw fine print label (cell location, e.g., A1, B1, etc.)
+            local colLetter = string.char(64 + x)  -- 65 is 'A'
+            local cellLabel = colLetter .. tostring(y)
+            love.graphics.setFont(cellLabelFont)
+            love.graphics.setColor(1, 1, 1, 0.5)  -- semi-transparent white
+            -- Position label in the top right of the cell with a slight padding
+            local labelWidth = cellLabelFont:getWidth(cellLabel)
+            love.graphics.print(cellLabel, cellX + TILE_SIZE - labelWidth - 2, cellY + 2)
         end
     end
 
@@ -83,6 +95,29 @@ function BoardRenderer.drawBoard(board, currentPlayer, selectedMinion)
     board:forEachMinion(function(minion, x, y)
         drawMinion(minion, x, y)
     end)
+
+    -- Draw towers for both players with updated labels.
+    -- Draw Player 1's tower (labeled "P1 Tower")
+    if player1.tower then
+        local tower = player1.tower
+        local towerX = boardX + (tower.position.x - 1) * TILE_SIZE
+        local towerY = boardY + (tower.position.y - 1) * TILE_SIZE
+        love.graphics.setColor(0, 0, 1, 1)  -- Blue for P1 Tower
+        love.graphics.rectangle("fill", towerX, towerY, TILE_SIZE, TILE_SIZE, 5, 5)
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.printf("P1 Tower: " .. tower.hp, towerX, towerY + TILE_SIZE/2 - 10, TILE_SIZE, "center")
+    end
+
+    -- Draw Player 2's tower (labeled "P2 Tower")
+    if player2.tower then
+        local tower = player2.tower
+        local towerX = boardX + (tower.position.x - 1) * TILE_SIZE
+        local towerY = boardY + (tower.position.y - 1) * TILE_SIZE
+        love.graphics.setColor(1, 0, 0, 1)  -- Red for P2 Tower
+        love.graphics.rectangle("fill", towerX, towerY, TILE_SIZE, TILE_SIZE, 5, 5)
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.printf("P2 Tower: " .. tower.hp, towerX, towerY + TILE_SIZE/2 - 10, TILE_SIZE, "center")
+    end
 
     -- Highlight the selected minion's cell, if any.
     if selectedMinion and selectedMinion.position then

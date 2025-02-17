@@ -1,7 +1,9 @@
 -- game/managers/gamemanager.lua
 -- This module now uses a grid-based board with flipped spawn zones,
--- and it supports selecting any spawn tile when summoning a minion.
--- Also, minion cards (of type "Minion") must be summoned via a pending summon.
+-- supports selecting any spawn tile when summoning a minion, and now
+-- incorporates towers as the win condition.
+-- It also prevents minions from being summoned onto or moving into tiles occupied by towers.
+
 local Player = require("game.core.player")
 local Board = require("game.core.board")
 local EffectManager = require("game.managers.effectmanager")
@@ -23,13 +25,25 @@ function GameManager:new()
 
     self.player1:drawCard(3)
     self.player2:drawCard(3)
+    
+    -- Initialize towers for each player according to the new win condition.
+    -- P1 Tower is on E8 (column 5, row 8)
+    self.player1.tower = {
+        position = { x = 5, y = 8 },
+        hp = 30
+    }
+    -- P2 Tower is on E2 (column 5, row 2)
+    self.player2.tower = {
+        position = { x = 5, y = 2 },
+        hp = 30
+    }
 
     return self
 end
 
 -- Helper to find a free spawn tile in the player's spawn zone.
 -- (Now unused for minions; summoning will use the player's selection.)
--- For reference: Player 1's spawn zone is the bottom row (row 6), Player 2's is the top row (row 1).
+-- For reference: Player 1's spawn zone is the bottom row (row 9), Player 2's is the top row (row 1).
 function GameManager:findSpawnTile(player)
     local spawnRow = (player == self.player1) and self.board.rows or 1
     for x = 1, self.board.cols do
@@ -50,13 +64,11 @@ function GameManager:draw()
         0, 20, love.graphics.getWidth(), "center"
     )
     love.graphics.printf(
-        self.player1.name .. " HP: " .. self.player1.health ..
-        " | Mana: " .. self.player1.manaCrystals .. "/" .. self.player1.maxManaCrystals,
+        self.player1.name .. " Tower HP: " .. self.player1.tower.hp,
         0, 60, love.graphics.getWidth(), "left"
     )
     love.graphics.printf(
-        self.player2.name .. " HP: " .. self.player2.health ..
-        " | Mana: " .. self.player2.manaCrystals .. "/" .. self.player2.maxManaCrystals,
+        self.player2.name .. " Tower HP: " .. self.player2.tower.hp,
         0, 80, love.graphics.getWidth(), "left"
     )
 end
@@ -101,6 +113,19 @@ function GameManager:getEnemyPlayer(player)
     return (player == self.player1) and self.player2 or self.player1
 end
 
+-- Helper function to check if a given cell (x,y) is occupied by a tower.
+function GameManager:isTileOccupiedByTower(x, y)
+    local p1Tower = self.player1.tower
+    local p2Tower = self.player2.tower
+    if p1Tower and p1Tower.position.x == x and p1Tower.position.y == y then
+        return true
+    end
+    if p2Tower and p2Tower.position.x == x and p2Tower.position.y == y then
+        return true
+    end
+    return false
+end
+
 --------------------------------------------------
 -- playCardFromHand:
 -- Handles playing a card immediately for non-minion types.
@@ -133,7 +158,8 @@ function GameManager:playCardFromHand(player, cardIndex)
     player.manaCrystals = player.manaCrystals - card.cost
     table.remove(player.hand, cardIndex)
 
-    if self.player1.health <= 0 or self.player2.health <= 0 then
+    -- Check win condition based on towers
+    if self.player1.tower.hp <= 0 or self.player2.tower.hp <= 0 then
         self:endGame()
     end
 end
@@ -143,11 +169,16 @@ end
 -- Summons a minion from a card into the specified tile.
 -- This function is called when a player selects a spawn tile.
 -- It validates that the chosen tile is in the player's spawn zone.
+-- It also prevents summoning onto a tile occupied by a tower.
 --------------------------------------------------
 function GameManager:summonMinion(player, card, cardIndex, x, y)
     local validSpawnRow = (player == self.player1) and self.board.rows or 1
     if y ~= validSpawnRow then
         print("Invalid spawn tile! Please select a tile in your spawn zone.")
+        return false
+    end
+    if self:isTileOccupiedByTower(x, y) then
+        print("Cannot summon minion onto a tower!")
         return false
     end
     if not self.board:isEmpty(x, y) then
@@ -175,7 +206,8 @@ function GameManager:summonMinion(player, card, cardIndex, x, y)
     if success then
         EffectManager.triggerBattlecry(card, self, player)
         table.remove(player.hand, cardIndex)
-        if self.player1.health <= 0 or self.player2.health <= 0 then
+        -- Check win condition based on towers
+        if self.player1.tower.hp <= 0 or self.player2.tower.hp <= 0 then
             self:endGame()
         end
         return true

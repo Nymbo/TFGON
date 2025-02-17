@@ -1,5 +1,5 @@
 -- game/scenes/gameplay/combat.lua
--- This module now handles grid-based combat between minions.
+-- This module now handles grid-based combat between minions and includes tower attacks.
 local CombatSystem = {}
 local EffectManager = require("game.managers.effectmanager")
 
@@ -58,23 +58,38 @@ function CombatSystem.resolveAttack(gameplay, attackerInfo, targetInfo)
             else
                 print("Target is out of reach!")
             end
+        elseif targetInfo.type == "tower" then
+            local enemy = gm:getEnemyPlayer(currentPlayer)
+            local towerPos = enemy.tower.position
+            local distance = chebyshevDistance(attacker.position, towerPos)
+            local reach = getReach(attacker.archetype)
+            if distance <= reach then
+                enemy.tower.hp = enemy.tower.hp - attacker.attack
+                print(attacker.name .. " attacked the tower for " .. attacker.attack .. " damage!")
+                attacker.canAttack = false
+            else
+                print("Tower is out of attack range!")
+            end
         end
 
     elseif attackerInfo.type == "hero" then
         local weapon = currentPlayer.weapon
         if weapon then
             currentPlayer.heroAttacked = true
+            local enemy = gm:getEnemyPlayer(currentPlayer)
             if targetInfo.type == "hero" then
-                local enemy = gm:getEnemyPlayer(currentPlayer)
                 enemy.health = enemy.health - weapon.attack
             elseif targetInfo.type == "minion" then
                 local target = targetInfo.minion
                 target.currentHealth = target.currentHealth - weapon.attack
                 if target.currentHealth <= 0 then
                     local tx, ty = target.position.x, target.position.y
-                    EffectManager.triggerDeathrattle(target, gm, gm:getEnemyPlayer(currentPlayer))
+                    EffectManager.triggerDeathrattle(target, gm, enemy)
                     gm.board:removeMinion(tx, ty)
                 end
+            elseif targetInfo.type == "tower" then
+                enemy.tower.hp = enemy.tower.hp - weapon.attack
+                print("Hero attacked the tower for " .. weapon.attack .. " damage!")
             end
             weapon.durability = weapon.durability - 1
             if weapon.durability <= 0 then
@@ -83,7 +98,8 @@ function CombatSystem.resolveAttack(gameplay, attackerInfo, targetInfo)
         end
     end
 
-    if gm.player1.health <= 0 or gm.player2.health <= 0 then
+    local enemy = gm:getEnemyPlayer(currentPlayer)
+    if enemy.tower.hp <= 0 then
         gm:endGame()
     end
 end
