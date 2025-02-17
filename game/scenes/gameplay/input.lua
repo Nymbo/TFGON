@@ -10,9 +10,9 @@ local END_TURN_BUTTON = {
 }
 
 -- Grid board constants
-local TILE_SIZE = 80
-local BOARD_COLS = 7
-local BOARD_ROWS = 6
+local TILE_SIZE = 100  -- Increased from 80 to 100 for better visibility
+local BOARD_COLS = 9   -- Updated from 7 to 9
+local BOARD_ROWS = 9   -- Updated from 6 to 9
 local boardWidth = TILE_SIZE * BOARD_COLS
 local boardHeight = TILE_SIZE * BOARD_ROWS
 local boardX = (love.graphics.getWidth() - boardWidth) / 2

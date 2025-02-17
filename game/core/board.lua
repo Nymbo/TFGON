@@ -1,12 +1,12 @@
 -- game/core/board.lua
--- This module now implements a 7x6 grid board.
+-- This module now implements a 9x9 grid board.
 local Board = {}
 Board.__index = Board
 
 function Board:new()
     local self = setmetatable({}, Board)
-    self.cols = 7
-    self.rows = 6
+    self.cols = 9  -- Updated from 7 to 9 columns
+    self.rows = 9  -- Updated from 6 to 9 rows
     -- Initialize a 2D array for tiles: tiles[y][x]
     self.tiles = {}
     for y = 1, self.rows do

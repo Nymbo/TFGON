@@ -4,9 +4,9 @@
 -- Minions that are able to attack are highlighted with a green outline.
 local BoardRenderer = {}
 
-local TILE_SIZE = 80
-local BOARD_COLS = 7
-local BOARD_ROWS = 6
+local TILE_SIZE = 100  -- Increased from 80 to 100 for better visibility
+local BOARD_COLS = 9   -- Updated from 7 to 9
+local BOARD_ROWS = 9   -- Updated from 6 to 9
 local boardWidth = TILE_SIZE * BOARD_COLS
 local boardHeight = TILE_SIZE * BOARD_ROWS
 local boardX = (love.graphics.getWidth() - boardWidth) / 2
@@ -17,7 +17,7 @@ local defaultBoardFont = love.graphics.newFont(12)
 
 local COLORS = {
     gridLine = {0, 0, 0, 1},
-    -- Spawn zones: row 1 is Player 2's spawn zone; row 6 is Player 1's spawn zone.
+    -- Spawn zones: row 1 is Player 2's spawn zone; row 9 is Player 1's spawn zone.
     spawnZoneP1 = {0.8, 0.8, 0.8, 0.3},  -- Player 1 (bottom row)
     spawnZoneP2 = {0.8, 0.8, 0.8, 0.3},  -- Player 2 (top row)
     text = {1, 1, 1, 1},
@@ -67,7 +67,7 @@ function BoardRenderer.drawBoard(board, currentPlayer, selectedMinion)
                 love.graphics.setColor(COLORS.spawnZoneP2)
                 love.graphics.rectangle("fill", cellX, cellY, TILE_SIZE, TILE_SIZE)
             elseif y == BOARD_ROWS then
-                -- Row 6: Player 1's spawn zone.
+                -- Row 9: Player 1's spawn zone.
                 love.graphics.setColor(COLORS.spawnZoneP1)
                 love.graphics.rectangle("fill", cellX, cellY, TILE_SIZE, TILE_SIZE)
             else
