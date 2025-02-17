@@ -110,7 +110,7 @@ return {
         movement = 2,
         archetype = "Melee",
         deathrattle = function(gameManager, player)
-            -- Example: Draw 1 card
+            -- TEXT: Draw 1 card
             player:drawCard(1)
         end
     },
@@ -123,7 +123,7 @@ return {
         movement = 2,
         archetype = "Ranged",
         deathrattle = function(gameManager, player)
-            -- Example: deal 2 damage to enemy hero
+            -- TEXT: deal 2 damage to enemy hero
             local enemy = gameManager:getEnemyPlayer(player)
             enemy.health = enemy.health - 2
         end
