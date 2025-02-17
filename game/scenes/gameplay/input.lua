@@ -3,6 +3,7 @@
 -- Now supports a pending summon state: when a minion card is clicked,
 -- the player must then click a tile in their spawn zone to summon it.
 -- Also ensures that minions cannot move to or be summoned on tiles occupied by a tower.
+
 local CardRenderer = require("game.ui.cardrenderer")
 
 local END_TURN_BUTTON = {
@@ -89,6 +90,12 @@ function InputSystem.mousepressed(gameplay, x, y, button, istouch, presses)
         -- Check if clicked cell is the enemy tower's location (for tower attacks)
         if cellX == enemy.tower.position.x and cellY == enemy.tower.position.y then
             if gameplay.selectedMinion then
+                -- If the minion is not allowed to attack, clear selection.
+                if not gameplay.selectedMinion.canAttack then
+                    print("This minion has already attacked this turn.")
+                    gameplay.selectedMinion = nil
+                    return
+                end
                 gameplay:resolveAttack({type = "minion", minion = gameplay.selectedMinion}, {type = "tower", tower = enemy.tower})
                 gameplay.selectedMinion = nil
                 return
@@ -122,20 +129,30 @@ function InputSystem.mousepressed(gameplay, x, y, button, istouch, presses)
             end
         end
 
-        -- Otherwise, handle selection, movement, and attacks as before.
+        -- Otherwise, handle selection, movement, and attacks.
         local clickedMinion = gm.board:getMinionAt(cellX, cellY)
         
         if not gameplay.selectedMinion then
-            -- No minion selected: if the clicked minion belongs to the current player, select it.
+            -- No minion selected: if the clicked minion belongs to the current player and is allowed to attack, select it.
             if clickedMinion and clickedMinion.owner == currentPlayer then
-                gameplay.selectedMinion = clickedMinion
+                if clickedMinion.canAttack then
+                    gameplay.selectedMinion = clickedMinion
+                else
+                    print("This minion has already attacked this turn.")
+                end
             end
         else
             local selected = gameplay.selectedMinion
 
-            -- If the selected minion was just played (summoning sickness), it cannot act.
+            -- Prevent action if minion was just played or already attacked.
             if selected.summoningSickness then
                 print("Minion cannot act on the turn it was played.")
+                gameplay.selectedMinion = nil
+                return
+            end
+
+            if not selected.canAttack then
+                print("This minion has already attacked this turn.")
                 gameplay.selectedMinion = nil
                 return
             end
@@ -184,8 +201,12 @@ function InputSystem.mousepressed(gameplay, x, y, button, istouch, presses)
                     gameplay.selectedMinion = nil
                     return
                 else
-                    -- Clicked on another friendly minion: select it instead.
-                    gameplay.selectedMinion = clickedMinion
+                    -- Clicked on another friendly minion: select it instead if it can attack.
+                    if clickedMinion.canAttack then
+                        gameplay.selectedMinion = clickedMinion
+                    else
+                        print("This minion has already attacked this turn.")
+                    end
                     return
                 end
             end

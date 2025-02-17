@@ -36,8 +36,8 @@ function Gameplay:new(changeSceneCallback)
     -- Track hover state for the End Turn button
     self.endTurnHovered = false
 
-    -- Tracks the currently selected attacker in an ongoing attack (if any)
-    self.selectedAttacker = nil
+    -- Tracks the currently selected minion (if any)
+    self.selectedMinion = nil
 
     return self
 end

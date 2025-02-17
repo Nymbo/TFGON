@@ -66,8 +66,9 @@ function DrawSystem.drawGameplayScene(gameplay)
         gm.board,
         gm.player1,
         gm.player2,
-        gameplay.selectedAttacker,   -- if an attack is in progress
-        gm:getCurrentPlayer()        -- which player's turn it is
+        gameplay.selectedMinion,  -- Pass the selected minion
+        gm:getCurrentPlayer(),
+        gm                        -- Pass the entire gameManager
     )
 
     -- 3) Draw the current player's hand
