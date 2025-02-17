@@ -93,7 +93,7 @@ return {
         movement = 2,
         archetype = "Magic",
         battlecry = function(gameManager, player)
-            -- Example: draw 1 card
+            -- TEXT: draw 1 card
             player:drawCard(1)
         end
     },
