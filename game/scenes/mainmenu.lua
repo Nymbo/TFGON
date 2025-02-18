@@ -1,6 +1,6 @@
 -- game/scenes/mainmenu.lua
 -- A simple main menu scene that supports a background image and menu navigation.
--- Updated so that the "Play" option now goes to the Deck Selection scene.
+-- Updated so that the "Play" option now goes to deck selection and a "Settings" option is available.
 
 --------------------------------------------------
 -- Table definition for MainMenu scene
@@ -27,8 +27,8 @@ function MainMenu:new(changeSceneCallback)
     local self = setmetatable({}, MainMenu)
     self.changeSceneCallback = changeSceneCallback
     self.title = "The Fine Game of Nil"
-    -- Updated menu options: "Play" now leads to deck selection.
-    self.menuOptions = { "Play", "Collection", "Exit" }
+    -- Updated menu options: Added "Settings" option.
+    self.menuOptions = { "Play", "Collection", "Settings", "Exit" }
     self.selectedIndex = 1
     self.background = love.graphics.newImage("assets/images/mainmenu_background.png")
     return self
@@ -97,6 +97,8 @@ function MainMenu:activateMenuOption()
         self.changeSceneCallback("deckselection")
     elseif selected == "Collection" then
         self.changeSceneCallback("collection")
+    elseif selected == "Settings" then
+        self.changeSceneCallback("settings")
     elseif selected == "Exit" then
         love.event.quit()
     end

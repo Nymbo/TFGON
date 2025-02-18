@@ -1,5 +1,5 @@
 -- game/managers/scenemanager.lua
--- This manager handles switching between different scenes (main menu, deck selection, gameplay, collection, etc.)
+-- This manager handles switching between different scenes (main menu, deck selection, gameplay, collection, settings, etc.)
 -- without creating circular references. Scenes are required only when needed.
 
 --------------------------------------------------
@@ -34,6 +34,11 @@ function SceneManager:changeScene(sceneName, ...)
     elseif sceneName == "collection" then
         local Collection = require("game.scenes.collection")
         self.currentScene = Collection:new(function(newScene, ...)
+            self:changeScene(newScene, ...)
+        end, ...)
+    elseif sceneName == "settings" then
+        local Settings = require("game.scenes.settings")
+        self.currentScene = Settings:new(function(newScene, ...)
             self:changeScene(newScene, ...)
         end, ...)
     else

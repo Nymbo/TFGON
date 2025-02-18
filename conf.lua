@@ -1,19 +1,10 @@
 -- conf.lua
 -- Configures LÖVE settings such as window size, title, etc.
-
---------------------------------------------------
--- The love.conf function is called before everything else,
--- allowing you to configure your LÖVE application.
---------------------------------------------------
+-- Enabling high-DPI mode can fix cursor alignment issues on scaled displays.
 function love.conf(t)
-    -- The window title appears in the title bar of the window
     t.window.title = "The Fine Game of Nil"
-    
-    -- Set the default window width and height
     t.window.width = 1920
     t.window.height = 1080
-    
-    -- Enable the console window for debugging/logging (on Windows)
-    -- If set to false, no separate console window is shown.
+    t.window.highdpi = true  -- Enable high-DPI mode for accurate mouse coordinates.
     t.console = true
 end
