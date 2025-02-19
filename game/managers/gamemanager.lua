@@ -1,5 +1,7 @@
 -- game/managers/gamemanager.lua
--- Updated to accept a selected deck for player 1.
+-- Updated to accept a selected deck for player 1
+-- and trigger a callback ("onTurnStart") whenever a new turn begins.
+
 local Player = require("game.core.player")
 local Board = require("game.core.board")
 local EffectManager = require("game.managers.effectmanager")
@@ -11,6 +13,7 @@ GameManager.__index = GameManager
 --------------------------------------------------
 -- Constructor for GameManager.
 -- 'selectedDeck' is used for player 1.
+-- Added "self.onTurnStart = nil" for hooking into turn-start events.
 --------------------------------------------------
 function GameManager:new(selectedDeck)
     local self = setmetatable({}, GameManager)
@@ -32,16 +35,32 @@ function GameManager:new(selectedDeck)
     self.player1.tower = { position = { x = 5, y = 8 }, hp = 30 }
     self.player2.tower = { position = { x = 5, y = 2 }, hp = 30 }
 
+    -- Callback that the Gameplay scene can set to display banners, etc.
+    self.onTurnStart = nil
+
     return self
 end
 
--- The rest of the file remains unchanged...
+--------------------------------------------------
+-- update(dt):
+-- Currently does nothing, but is here if needed later.
+--------------------------------------------------
 function GameManager:update(dt) end
+
+--------------------------------------------------
+-- draw():
+-- Basic turn info and tower health for debugging.
+--------------------------------------------------
 function GameManager:draw()
     love.graphics.printf("Current Turn: " .. self:getCurrentPlayer().name, 0, 20, love.graphics.getWidth(), "center")
     love.graphics.printf(self.player1.name .. " Tower HP: " .. self.player1.tower.hp, 0, 60, love.graphics.getWidth(), "left")
     love.graphics.printf(self.player2.name .. " Tower HP: " .. self.player2.tower.hp, 0, 80, love.graphics.getWidth(), "left")
 end
+
+--------------------------------------------------
+-- endTurn():
+-- Switches the current player and starts their turn.
+--------------------------------------------------
 function GameManager:endTurn()
     if self.currentPlayer == 1 then
         self.currentPlayer = 2
@@ -50,12 +69,20 @@ function GameManager:endTurn()
     end
     self:startTurn()
 end
+
+--------------------------------------------------
+-- startTurn():
+-- Gains mana, draws a card, resets minions, triggers onTurnStart callback.
+--------------------------------------------------
 function GameManager:startTurn()
     local player = self:getCurrentPlayer()
-    if player.maxManaCrystals < 10 then player.maxManaCrystals = player.maxManaCrystals + 1 end
+    if player.maxManaCrystals < 10 then
+        player.maxManaCrystals = player.maxManaCrystals + 1
+    end
     player.manaCrystals = player.maxManaCrystals
     player:drawCard(1)
     player.heroAttacked = false
+
     self.board:forEachMinion(function(minion, x, y)
         if minion.owner == player then
             minion.summoningSickness = false
@@ -63,20 +90,53 @@ function GameManager:startTurn()
             minion.canAttack = true
         end
     end)
+
+    -- Trigger the "onTurnStart" callback so the gameplay scene can show banners, etc.
+    if self.onTurnStart then
+        if self.currentPlayer == 1 then
+            self.onTurnStart("player1")
+        else
+            self.onTurnStart("player2")
+        end
+    end
 end
+
+--------------------------------------------------
+-- getCurrentPlayer():
+-- Returns player1 if currentPlayer == 1, otherwise player2.
+--------------------------------------------------
 function GameManager:getCurrentPlayer()
     return (self.currentPlayer == 1) and self.player1 or self.player2
 end
+
+--------------------------------------------------
+-- getEnemyPlayer(player):
+-- Returns the opponent of the given player.
+--------------------------------------------------
 function GameManager:getEnemyPlayer(player)
     return (player == self.player1) and self.player2 or self.player1
 end
+
+--------------------------------------------------
+-- isTileOccupiedByTower(x, y):
+-- Checks if the given tile coordinates are occupied by a tower.
+--------------------------------------------------
 function GameManager:isTileOccupiedByTower(x, y)
     local p1Tower = self.player1.tower
     local p2Tower = self.player2.tower
-    if p1Tower and p1Tower.position.x == x and p1Tower.position.y == y then return true end
-    if p2Tower and p2Tower.position.x == x and p2Tower.position.y == y then return true end
+    if p1Tower and p1Tower.position.x == x and p1Tower.position.y == y then
+        return true
+    end
+    if p2Tower and p2Tower.position.x == x and p2Tower.position.y == y then
+        return true
+    end
     return false
 end
+
+--------------------------------------------------
+-- playCardFromHand(player, cardIndex):
+-- Attempts to play the specified card from the player's hand.
+--------------------------------------------------
 function GameManager:playCardFromHand(player, cardIndex)
     local card = player.hand[cardIndex]
     if not card then return end
@@ -102,6 +162,11 @@ function GameManager:playCardFromHand(player, cardIndex)
         self:endGame()
     end
 end
+
+--------------------------------------------------
+-- summonMinion(player, card, cardIndex, x, y):
+-- Places a minion on the board at (x, y), if valid.
+--------------------------------------------------
 function GameManager:summonMinion(player, card, cardIndex, x, y)
     local validSpawnRow = (player == self.player1) and self.board.rows or 1
     if y ~= validSpawnRow then
@@ -144,6 +209,11 @@ function GameManager:summonMinion(player, card, cardIndex, x, y)
         return false
     end
 end
+
+--------------------------------------------------
+-- endGame():
+-- Currently just prints "Game Over!" but can trigger a scene change or message.
+--------------------------------------------------
 function GameManager:endGame()
     print("Game Over!")
 end
