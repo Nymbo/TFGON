@@ -1,11 +1,13 @@
 -- game/managers/gamemanager.lua
 -- Updated to accept a selected deck for player 1
 -- and trigger a callback ("onTurnStart") whenever a new turn begins.
+-- Also updated to use Tower objects for towers.
 
 local Player = require("game.core.player")
 local Board = require("game.core.board")
 local EffectManager = require("game.managers.effectmanager")
 local Deck = require("game/core/deck")
+local Tower = require("game.core.tower")  -- Newly added Tower module
 
 local GameManager = {}
 GameManager.__index = GameManager
@@ -31,9 +33,19 @@ function GameManager:new(selectedDeck)
     self.player1:drawCard(3)
     self.player2:drawCard(3)
     
-    -- Initialize towers for each player.
-    self.player1.tower = { position = { x = 5, y = 8 }, hp = 30 }
-    self.player2.tower = { position = { x = 5, y = 2 }, hp = 30 }
+    -- Initialize towers for each player using the Tower object.
+    self.player1.tower = Tower:new({
+        owner = self.player1,
+        position = { x = 5, y = 8 },
+        hp = 30,
+        imagePath = "assets/images/panel_grey_bolts_blue.png"
+    })
+    self.player2.tower = Tower:new({
+        owner = self.player2,
+        position = { x = 5, y = 2 },
+        hp = 30,
+        imagePath = "assets/images/panel_grey_bolts_red.png"
+    })
 
     -- Callback that the Gameplay scene can set to display banners, etc.
     self.onTurnStart = nil

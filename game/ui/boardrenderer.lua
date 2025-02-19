@@ -18,6 +18,8 @@ local boardY = 50
 local defaultBoardFont = love.graphics.newFont(12)
 -- Define a small font for cell labels
 local cellLabelFont = love.graphics.newFont(10)
+-- Load the custom font for tower HP display
+local towerFont = love.graphics.newFont("assets/fonts/InknutAntiqua-Regular.ttf", 14)
 
 local COLORS = {
     gridLine = {0, 0, 0, 1},
@@ -112,7 +114,7 @@ function BoardRenderer.drawBoard(board, player1, player2, selectedMinion, curren
     end
 
     -- 2) If we have a selectedMinion that belongs to currentPlayer,
-    --    highlight all valid move tiles in blue (like Civ).
+    --    highlight all valid move tiles in blue.
     if selectedMinion
        and selectedMinion.owner == currentPlayer
        and not selectedMinion.summoningSickness
@@ -146,16 +148,20 @@ function BoardRenderer.drawBoard(board, player1, player2, selectedMinion, curren
         drawMinion(minion, x, y, currentPlayer)
     end)
 
-    -- 4) Draw towers for both players with updated labels.
+    -- 4) Draw towers for both players using their images.
     -- Player 1's tower
     if player1.tower then
         local tower = player1.tower
         local towerX = boardX + (tower.position.x - 1) * TILE_SIZE
         local towerY = boardY + (tower.position.y - 1) * TILE_SIZE
-        love.graphics.setColor(0, 0, 1, 1)  -- Blue for P1 Tower
-        love.graphics.rectangle("fill", towerX, towerY, TILE_SIZE, TILE_SIZE, 5, 5)
         love.graphics.setColor(1, 1, 1, 1)
-        love.graphics.printf("P1 Tower: " .. tower.hp, towerX, towerY + TILE_SIZE / 2 - 10, TILE_SIZE, "center")
+        -- Scale the image to fit the cell
+        local scale = TILE_SIZE / tower.image:getWidth()
+        love.graphics.draw(tower.image, towerX, towerY, 0, scale, scale)
+        -- Draw tower HP in the center using the custom font.
+        love.graphics.setFont(towerFont)
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.printf(tostring(tower.hp), towerX, towerY + (TILE_SIZE - towerFont:getHeight())/2, TILE_SIZE, "center")
     end
 
     -- Player 2's tower
@@ -163,10 +169,12 @@ function BoardRenderer.drawBoard(board, player1, player2, selectedMinion, curren
         local tower = player2.tower
         local towerX = boardX + (tower.position.x - 1) * TILE_SIZE
         local towerY = boardY + (tower.position.y - 1) * TILE_SIZE
-        love.graphics.setColor(1, 0, 0, 1)  -- Red for P2 Tower
-        love.graphics.rectangle("fill", towerX, towerY, TILE_SIZE, TILE_SIZE, 5, 5)
         love.graphics.setColor(1, 1, 1, 1)
-        love.graphics.printf("P2 Tower: " .. tower.hp, towerX, towerY + TILE_SIZE / 2 - 10, TILE_SIZE, "center")
+        local scale = TILE_SIZE / tower.image:getWidth()
+        love.graphics.draw(tower.image, towerX, towerY, 0, scale, scale)
+        love.graphics.setFont(towerFont)
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.printf(tostring(tower.hp), towerX, towerY + (TILE_SIZE - towerFont:getHeight())/2, TILE_SIZE, "center")
     end
 
     -- 5) Highlight the selectedMinion's cell with a thicker green outline (if any).
