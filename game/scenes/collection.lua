@@ -125,18 +125,20 @@ function Collection:drawCardPool()
     love.graphics.print("Card Collection", startX, startY)
     startY = startY + Theme.fonts.subtitle:getHeight() + margin
 
-    -- Draw cards in a grid
-    for row = 0, self.gridRows - 1 do
-        for col = 0, self.gridColumns - 1 do
-            local cardIndex = self.poolScroll + (row * self.gridColumns + col) + 1
-            local card = self.cardPool[cardIndex]
-            if card then
-                local x = startX + col * (self.cardWidth + margin)
-                local y = startY + row * (self.cardHeight + margin)
-                -- Draw the card with CardRenderer
-                CardRenderer.drawCard(card, x, y, true)
-            end
-        end
+    -- Calculate number of rows needed
+    local totalCards = #self.cardPool
+    local totalRows = math.ceil(totalCards / self.gridColumns)
+
+    -- Draw all cards in a grid
+    for i, card in ipairs(self.cardPool) do
+        local col = (i - 1) % self.gridColumns
+        local row = math.floor((i - 1) / self.gridColumns)
+        
+        local x = startX + col * (self.cardWidth + margin)
+        local y = startY + row * (self.cardHeight + margin)
+        
+        -- Draw the card at double size (scale is handled in dimensions)
+        CardRenderer.drawCard(card, x, y, false)  -- false = not playable, removes green outline
     end
 end
 
@@ -179,11 +181,148 @@ function Collection:drawDeckManager()
     love.graphics.print("Deck Contents:", x, y)
     y = y + Theme.fonts.body:getHeight() + 10
 
+    -- Count duplicates
     local deck = self.decks[self.selectedDeckIndex]
+    local cardCounts = {}
+    local cardOrder = {}  -- To maintain original order
+    local seenCards = {}
+    
     for i, card in ipairs(deck.cards) do
-        love.graphics.setColor(Theme.colors.textSecondary)
-        love.graphics.print(card.name, x + 10, y)
-        y = y + 20
+        if not seenCards[card.name] then
+            seenCards[card.name] = true
+            table.insert(cardOrder, card)
+        end
+        cardCounts[card.name] = (cardCounts[card.name] or 0) + 1
+    end
+
+    -- Draw scrollable card list
+    local cardButtonHeight = 36
+    local cardButtonSpacing = 6
+    local mx, my = love.mouse.getPosition()
+
+    for _, card in ipairs(cardOrder) do
+        local buttonY = y
+        local isHovered = mx >= x and mx <= x + width and
+                         my >= buttonY and my <= buttonY + cardButtonHeight
+
+        -- Button shadow
+        love.graphics.setColor(0, 0, 0, 0.3)
+        love.graphics.rectangle(
+            "fill",
+            x + 2,
+            buttonY + 2,
+            width,
+            cardButtonHeight,
+            6
+        )
+
+        -- Button background
+        local baseColor = isHovered and {0.25, 0.25, 0.28, 1} or {0.2, 0.2, 0.23, 1}
+        love.graphics.setColor(baseColor)
+        love.graphics.rectangle(
+            "fill",
+            x,
+            buttonY,
+            width,
+            cardButtonHeight,
+            6
+        )
+
+        -- Subtle gradient overlay
+        local gradientColor = isHovered and {0.3, 0.3, 0.33, 1} or {0.25, 0.25, 0.28, 1}
+        love.graphics.setColor(gradientColor)
+        love.graphics.rectangle(
+            "fill",
+            x,
+            buttonY,
+            width,
+            cardButtonHeight/2,
+            6
+        )
+
+        -- Cost circle
+        local circleRadius = cardButtonHeight/2 - 6
+        local circleX = x + circleRadius + 10
+        local circleY = buttonY + cardButtonHeight/2
+        
+        -- Cost circle background and border
+        love.graphics.setColor(Theme.colors.manaBg)
+        love.graphics.circle("fill", circleX, circleY, circleRadius + 1)
+        love.graphics.setColor(Theme.colors.manaCircle)
+        love.graphics.circle("fill", circleX, circleY, circleRadius)
+
+        -- Cost number
+        love.graphics.setFont(Theme.fonts.cardStat)
+        love.graphics.setColor(1, 1, 1, 1)
+        local costStr = tostring(card.cost)
+        local costWidth = Theme.fonts.cardStat:getWidth(costStr)
+        love.graphics.print(
+            costStr,
+            circleX - costWidth/2,
+            circleY - Theme.fonts.cardStat:getHeight()/2
+        )
+
+        -- Card name
+        love.graphics.setFont(Theme.fonts.body)
+        love.graphics.setColor(isHovered and Theme.colors.textHover or Theme.colors.textPrimary)
+        love.graphics.print(
+            card.name,
+            x + circleRadius * 2 + 20,
+            buttonY + (cardButtonHeight - Theme.fonts.body:getHeight())/2
+        )
+
+        -- Stats (if minion)
+        if card.cardType == "Minion" then
+            local statsText = card.attack .. "/" .. card.health
+            local statsWidth = Theme.fonts.body:getWidth(statsText)
+            love.graphics.setColor(0.7, 0.7, 0.7, 1)
+            love.graphics.print(
+                statsText,
+                x + width - statsWidth - 15,
+                buttonY + (cardButtonHeight - Theme.fonts.body:getHeight())/2
+            )
+        end
+
+        -- Draw count ribbon if more than 1
+        local count = cardCounts[card.name]
+        if count > 1 then
+            -- Ribbon background
+            local ribbonWidth = 30
+            local ribbonHeight = 20
+            local ribbonX = x + width - ribbonWidth - 10
+            local ribbonY = buttonY - ribbonHeight/2
+
+            -- Shadow
+            love.graphics.setColor(0, 0, 0, 0.3)
+            love.graphics.polygon('fill',
+                ribbonX + 2, ribbonY + 2,
+                ribbonX + ribbonWidth + 2, ribbonY + 2,
+                ribbonX + ribbonWidth + 2, ribbonY + ribbonHeight + 2,
+                ribbonX + 2, ribbonY + ribbonHeight + 2
+            )
+
+            -- Main ribbon
+            love.graphics.setColor(Theme.colors.buttonBorder)
+            love.graphics.polygon('fill',
+                ribbonX, ribbonY,
+                ribbonX + ribbonWidth, ribbonY,
+                ribbonX + ribbonWidth, ribbonY + ribbonHeight,
+                ribbonX, ribbonY + ribbonHeight
+            )
+
+            -- Count text
+            love.graphics.setFont(Theme.fonts.cardType)
+            love.graphics.setColor(Theme.colors.background)
+            local countText = "x" .. count
+            local textWidth = Theme.fonts.cardType:getWidth(countText)
+            love.graphics.print(
+                countText,
+                ribbonX + (ribbonWidth - textWidth)/2,
+                ribbonY + (ribbonHeight - Theme.fonts.cardType:getHeight())/2
+            )
+        end
+
+        y = y + cardButtonHeight + cardButtonSpacing
     end
 
     -- Buttons
@@ -304,18 +443,20 @@ function Collection:handleCardPoolClick(x, y)
     local startY = margin + Theme.fonts.subtitle:getHeight() + margin
 
     -- Calculate which card was clicked
-    local col = math.floor((x - startX) / (self.cardWidth + margin))
-    local row = math.floor((y - startY) / (self.cardHeight + margin))
-    
-    if col >= 0 and col < self.gridColumns and row >= 0 and row < self.gridRows then
-        local cardIndex = self.poolScroll + (row * self.gridColumns + col) + 1
-        local card = self.cardPool[cardIndex]
+    for i, card in ipairs(self.cardPool) do
+        local col = (i - 1) % self.gridColumns
+        local row = math.floor((i - 1) / self.gridColumns)
         
-        if card then
+        local cardX = startX + col * (self.cardWidth + margin)
+        local cardY = startY + row * (self.cardHeight + margin)
+        
+        if x >= cardX and x <= cardX + self.cardWidth and
+           y >= cardY and y <= cardY + self.cardHeight then
             local success = DeckManager:addCardToDeck(self.selectedDeckIndex, card)
             if not success then
                 print("Cannot add card: deck full or card limit reached.")
             end
+            return
         end
     end
 end
@@ -359,10 +500,39 @@ function Collection:handleDeckManagerClick(x, y)
     end
 
     -- Check for card removal clicks in deck contents
-    local contentsStartY = deckStartY + (#self.decks * (slotHeight + 5)) + 60
-    local cardY = math.floor((y - contentsStartY) / 20)
-    if cardY >= 0 and cardY < #self.decks[self.selectedDeckIndex].cards then
-        DeckManager:removeCardFromDeck(self.selectedDeckIndex, cardY + 1)
+    local cardButtonHeight = 36
+    local cardButtonSpacing = 6
+    local cardsStartY = deckStartY + (#self.decks * (slotHeight + 5)) + 60 + Theme.fonts.body:getHeight() + 10
+    local deck = self.decks[self.selectedDeckIndex]
+    
+    -- Count unique cards and maintain order
+    local cardCounts = {}
+    local cardOrder = {}
+    local seenCards = {}
+    
+    for i, card in ipairs(deck.cards) do
+        if not seenCards[card.name] then
+            seenCards[card.name] = true
+            table.insert(cardOrder, card)
+        end
+        cardCounts[card.name] = (cardCounts[card.name] or 0) + 1
+    end
+    
+    -- Find which unique card was clicked
+    local currentY = cardsStartY
+    for i, card in ipairs(cardOrder) do
+        if y >= currentY and y <= currentY + cardButtonHeight and
+           x >= margin and x <= margin + width then
+            -- Find the actual index of the last instance of this card
+            for j = #deck.cards, 1, -1 do
+                if deck.cards[j].name == card.name then
+                    DeckManager:removeCardFromDeck(self.selectedDeckIndex, j)
+                    break
+                end
+            end
+            return
+        end
+        currentY = currentY + cardButtonHeight + cardButtonSpacing
     end
 end
 
