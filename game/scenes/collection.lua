@@ -29,8 +29,8 @@ function Collection:new(changeSceneCallback)
     -- UI dimensions
     self.screenWidth = love.graphics.getWidth()
     self.screenHeight = love.graphics.getHeight()
-    self.leftPanelWidth = self.screenWidth * 0.7
-    self.rightPanelWidth = self.screenWidth * 0.3
+    self.leftPanelWidth = self.screenWidth * 0.6
+    self.rightPanelWidth = self.screenWidth * 0.4
 
     -- Panel positions
     self.leftPanelX = 0
@@ -51,6 +51,9 @@ function Collection:new(changeSceneCallback)
     self.cardSpacingX = (self.leftPanelWidth - (self.gridColumns + 1) * margin) / self.gridColumns
     self.cardSpacingY = (self.screenHeight - (self.gridRows + 1) * margin) / self.gridRows
 
+    -- Load the new background image for the collection scene
+    self.collectionBackground = love.graphics.newImage("assets/images/collection_background.png")
+    
     return self
 end
 
@@ -65,15 +68,22 @@ end
 -- draw(): Render the collection scene
 --------------------------------------------------
 function Collection:draw()
-    -- Draw overall background
-    love.graphics.setColor(Theme.colors.background)
-    love.graphics.rectangle("fill", 0, 0, self.screenWidth, self.screenHeight)
+    -- Draw the new background image with 50% opacity covering the entire screen.
+    local bg = self.collectionBackground
+    local bgW, bgH = bg:getWidth(), bg:getHeight()
+    local scale = math.max(self.screenWidth / bgW, self.screenHeight / bgH)
+    local offsetX = (self.screenWidth - bgW * scale) / 2
+    local offsetY = (self.screenHeight - bgH * scale) / 2
+    love.graphics.setColor(1, 1, 1, 1.0)  -- Set opacity to 50%
+    love.graphics.draw(bg, offsetX, offsetY, 0, scale, scale)
+    love.graphics.setColor(1, 1, 1, 1)    -- Reset color
 
-    -- Draw left panel (card pool)
-    love.graphics.setColor(Theme.colors.backgroundLight)
+    -- Draw left panel (card pool) with transparency
+    local leftPanelColor = {Theme.colors.backgroundLight[1], Theme.colors.backgroundLight[2], Theme.colors.backgroundLight[3], 0.7}
+    love.graphics.setColor(leftPanelColor)
     love.graphics.rectangle("fill", self.leftPanelX, self.leftPanelY, self.leftPanelWidth, self.screenHeight)
 
-    -- Draw decorative separator between panels
+    -- Draw decorative separator between panels (opaque golden border)
     love.graphics.setColor(Theme.colors.buttonBorder)
     love.graphics.setLineWidth(2)
     -- Main vertical line
@@ -102,11 +112,12 @@ function Collection:draw()
     end
     love.graphics.setLineWidth(1)
 
-    -- Draw panels
+    -- Draw panels' content
     self:drawCardPool()
 
-    -- Draw right panel (deck manager)
-    love.graphics.setColor(Theme.colors.backgroundLight)
+    -- Draw right panel (deck manager) with transparency
+    local rightPanelColor = {Theme.colors.backgroundLight[1], Theme.colors.backgroundLight[2], Theme.colors.backgroundLight[3], 0.7}
+    love.graphics.setColor(rightPanelColor)
     love.graphics.rectangle("fill", self.rightPanelX, self.rightPanelY, self.rightPanelWidth, self.screenHeight)
     self:drawDeckManager()
 end
