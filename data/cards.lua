@@ -58,6 +58,33 @@ return {
         movement = 1,
         archetype = "Melee"
     },
+    {
+        name = "Ardent Defender",
+        cardType = "Minion",
+        cost = 3,
+        attack = 2,
+        health = 6,
+        movement = 1,
+        archetype = "Melee"
+    },
+    {
+        name = "Eager Recruit",
+        cardType = "Minion",
+        cost = 2,
+        attack = 3,
+        health = 2,
+        movement = 2,
+        archetype = "Melee"
+    },
+    {
+        name = "Rifleman",
+        cardType = "Minion",
+        cost = 2,
+        attack = 4,
+        health = 2,
+        movement = 1,
+        archetype = "Ranged"
+    },
 
     --------------------------------------------------
     -- Weapon (refactored to use effectKey)
@@ -85,7 +112,7 @@ return {
     -- Placeholder Minion with BATTLECRY
     --------------------------------------------------
     {
-        name = "Novice Engineer",
+        name = "Scholar",
         cardType = "Minion",
         cost = 2,
         attack = 1,
