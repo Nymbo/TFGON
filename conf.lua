@@ -5,6 +5,6 @@ function love.conf(t)
     t.window.title = "The Fine Game of Nil"
     t.window.width = 1920
     t.window.height = 1080
-    t.window.highdpi = true  -- Enable high-DPI mode for accurate mouse coordinates.
+    t.window.highdpi = false
     t.console = true
 end
