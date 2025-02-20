@@ -5,10 +5,12 @@
 -- Also ensures that minions cannot move to or be summoned on tiles occupied by a tower.
 
 local CardRenderer = require("game.ui.cardrenderer")
+local Theme = require("game.ui.theme")  -- Import the UI theme
 
+-- Use dimensions from the theme for the End Turn button
 local END_TURN_BUTTON = {
-    width = 120,
-    height = 40
+    width = Theme.dimensions.buttonWidth,
+    height = Theme.dimensions.buttonHeight
 }
 
 -- Grid board constants

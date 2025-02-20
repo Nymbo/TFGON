@@ -1,134 +1,162 @@
 -- game/scenes/settings.lua
--- This scene provides a Master Volume slider for adjusting the game's overall sound.
--- It also includes a "Back" button to return to the main menu.
--- The slider value (0 to 1) is applied using love.audio.setVolume.
+-- Settings scene with a themed slider and button
 
 local Settings = {}
 Settings.__index = Settings
 
+local Theme = require("game.ui.theme")  -- Import the theme
+
 --------------------------------------------------
--- Constructor for the Settings scene.
--- Accepts a changeSceneCallback to switch scenes.
+-- Constants using Theme
 --------------------------------------------------
+local BUTTON = {
+    width = 220,  -- Override for larger button
+    height = Theme.dimensions.buttonHeight,
+    cornerRadius = Theme.dimensions.buttonCornerRadius,
+    font = Theme.fonts.button,
+    colors = Theme.colors,
+    shadowOffset = Theme.dimensions.buttonShadowOffset,
+    glowOffset = Theme.dimensions.buttonGlowOffset
+}
+
+local SLIDER = {
+    width = Theme.dimensions.sliderWidth,
+    height = Theme.dimensions.sliderHeight,
+    knobRadius = Theme.dimensions.sliderKnobRadius,
+    font = Theme.fonts.label,
+    colors = Theme.colors,
+    shadowOffset = Theme.dimensions.sliderShadowOffset,
+    glowOffset = Theme.dimensions.sliderGlowOffset
+}
+
 function Settings:new(changeSceneCallback)
     local self = setmetatable({}, Settings)
-    
     self.changeSceneCallback = changeSceneCallback
 
-    -- Get screen dimensions for layout
     self.screenWidth = love.graphics.getWidth()
     self.screenHeight = love.graphics.getHeight()
 
-    -- Define slider properties:
-    -- We'll place the slider horizontally centered.
-    self.sliderX = self.screenWidth * 0.3            -- left position of the slider track
-    self.sliderY = self.screenHeight * 0.5             -- vertical position of the slider track
-    self.sliderWidth = self.screenWidth * 0.4          -- width of the slider track
-    self.sliderHeight = 10                             -- height (thickness) of the slider track
-
-    -- Initialize the slider value from the current master volume (0-1)
+    self.sliderX = (self.screenWidth - SLIDER.width) / 2
+    self.sliderY = self.screenHeight * 0.5
     self.sliderValue = love.audio.getVolume() or 1
-
-    -- Flag to track if the slider knob is being dragged.
     self.dragging = false
 
     return self
 end
 
---------------------------------------------------
--- update(dt):
--- Called each frame to update slider value when dragging.
---------------------------------------------------
 function Settings:update(dt)
-    -- If dragging, update sliderValue based on current mouse position.
     if self.dragging then
         local mx = love.mouse.getX()
-        local value = (mx - self.sliderX) / self.sliderWidth
-        -- Clamp the value between 0 and 1.
-        if value < 0 then value = 0 end
-        if value > 1 then value = 1 end
-        self.sliderValue = value
-
-        -- Apply the new master volume.
+        local value = (mx - self.sliderX) / SLIDER.width
+        self.sliderValue = math.max(0, math.min(1, value))
         love.audio.setVolume(self.sliderValue)
-    else
-        -- Ensure dragging is false if the left mouse button is not held.
-        if not love.mouse.isDown(1) then
-            self.dragging = false
-        end
+    end
+    if not love.mouse.isDown(1) then
+        self.dragging = false
     end
 end
 
---------------------------------------------------
--- draw():
--- Renders the Settings scene, including the title, slider,
--- current volume percentage, and a Back button.
---------------------------------------------------
 function Settings:draw()
-    -- Draw background.
-    love.graphics.setColor(0.1, 0.1, 0.1, 1)
+    love.graphics.setColor(Theme.colors.background)
     love.graphics.rectangle("fill", 0, 0, self.screenWidth, self.screenHeight)
 
-    -- Draw the scene title.
-    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.setColor(Theme.colors.textPrimary)
+    love.graphics.setFont(BUTTON.font)
     love.graphics.printf("Settings", 0, self.screenHeight * 0.2, self.screenWidth, "center")
 
-    -- Draw Master Volume text above the slider.
     local volumePercent = math.floor(self.sliderValue * 100)
-    love.graphics.printf("Master Volume: " .. volumePercent .. "%", 0, self.sliderY - 40, self.screenWidth, "center")
+    love.graphics.setColor(SLIDER.colors.textPrimary)
+    love.graphics.setFont(SLIDER.font)
+    love.graphics.printf("Master Volume: " .. volumePercent .. "%", 0, self.sliderY - 50, self.screenWidth, "center")
 
-    -- Draw the slider track (a grey rectangle).
-    love.graphics.setColor(0.5, 0.5, 0.5, 1)
-    love.graphics.rectangle("fill", self.sliderX, self.sliderY, self.sliderWidth, self.sliderHeight)
+    love.graphics.setColor(SLIDER.colors.sliderTrackBase)
+    love.graphics.rectangle("fill", self.sliderX, self.sliderY, SLIDER.width, SLIDER.height, 4)
+    love.graphics.setColor(SLIDER.colors.sliderTrackTop)
+    love.graphics.rectangle("fill", self.sliderX + 2, self.sliderY + 2, SLIDER.width - 4, SLIDER.height / 2, 4)
 
-    -- Draw the slider knob as a white circle.
-    local knobX = self.sliderX + self.sliderValue * self.sliderWidth
-    local knobY = self.sliderY + self.sliderHeight / 2
-    local knobRadius = self.sliderHeight * 2
-    love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.circle("fill", knobX, knobY, knobRadius)
+    local knobX = self.sliderX + self.sliderValue * SLIDER.width
+    local knobY = self.sliderY + SLIDER.height / 2
 
-    -- Draw the Back button at the bottom.
-    local buttonWidth = 200
-    local buttonHeight = 40
-    local buttonX = (self.screenWidth - buttonWidth) / 2
+    love.graphics.setColor(SLIDER.colors.sliderKnobShadow)
+    love.graphics.circle("fill", knobX + SLIDER.shadowOffset, knobY + SLIDER.shadowOffset, SLIDER.knobRadius)
+
+    if self.dragging then
+        love.graphics.setColor(SLIDER.colors.sliderGlowDrag)
+        love.graphics.circle("fill", knobX, knobY, SLIDER.knobRadius + SLIDER.glowOffset)
+    end
+
+    love.graphics.setColor(SLIDER.colors.sliderKnob)
+    love.graphics.circle("fill", knobX, knobY, SLIDER.knobRadius)
+    love.graphics.setColor(SLIDER.colors.sliderKnobShine)
+    love.graphics.circle("fill", knobX - SLIDER.knobRadius / 2, knobY - SLIDER.knobRadius / 2, SLIDER.knobRadius / 4)
+
+    local buttonX = (self.screenWidth - BUTTON.width) / 2
     local buttonY = self.screenHeight * 0.8
-    love.graphics.setColor(0.8, 0.2, 0.2, 1)  -- Red button color.
-    love.graphics.rectangle("fill", buttonX, buttonY, buttonWidth, buttonHeight, 5, 5)
+    local isHovered = love.mouse.getX() >= buttonX and love.mouse.getX() <= buttonX + BUTTON.width and
+                      love.mouse.getY() >= buttonY and love.mouse.getY() <= buttonY + BUTTON.height
+
+    love.graphics.setColor(BUTTON.colors.buttonShadow)
+    love.graphics.rectangle(
+        "fill",
+        buttonX + BUTTON.shadowOffset,
+        buttonY + BUTTON.shadowOffset,
+        BUTTON.width,
+        BUTTON.height,
+        BUTTON.cornerRadius
+    )
+
+    if isHovered then
+        love.graphics.setColor(BUTTON.colors.buttonGlowHover)
+        love.graphics.rectangle(
+            "fill",
+            buttonX - BUTTON.glowOffset,
+            buttonY - BUTTON.glowOffset,
+            BUTTON.width + 2 * BUTTON.glowOffset,
+            BUTTON.height + 2 * BUTTON.glowOffset,
+            BUTTON.cornerRadius + 2
+        )
+    end
+
+    love.graphics.setColor(BUTTON.colors.buttonBase)
+    love.graphics.rectangle("fill", buttonX, buttonY, BUTTON.width, BUTTON.height, BUTTON.cornerRadius)
+    love.graphics.setColor(BUTTON.colors.buttonGradientTop)
+    love.graphics.rectangle("fill", buttonX + 2, buttonY + 2, BUTTON.width - 4, BUTTON.height / 2, BUTTON.cornerRadius)
+
+    love.graphics.setColor(BUTTON.colors.buttonBorder)
+    love.graphics.setLineWidth(2)
+    love.graphics.rectangle("line", buttonX, buttonY, BUTTON.width, BUTTON.height, BUTTON.cornerRadius)
+    love.graphics.setLineWidth(1)
+
+    love.graphics.setFont(BUTTON.font)
+    love.graphics.setColor(isHovered and BUTTON.colors.textHover or BUTTON.colors.textPrimary)
+    love.graphics.printf("Back", buttonX, buttonY + (BUTTON.height - BUTTON.font:getHeight()) / 2, BUTTON.width, "center")
+
     love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.printf("Back", buttonX, buttonY + 10, buttonWidth, "center")
 end
 
---------------------------------------------------
--- mousepressed(x, y, button, istouch, presses):
--- Handles mouse clicks for starting slider dragging and for the Back button.
---------------------------------------------------
 function Settings:mousepressed(x, y, button, istouch, presses)
-    if button ~= 1 then return end  -- Only handle left-click.
+    if button ~= 1 then return end
 
-    -- Check if the click is within the slider track (allowing a little extra vertical padding).
-    if x >= self.sliderX and x <= self.sliderX + self.sliderWidth and 
-       y >= self.sliderY - 10 and y <= self.sliderY + self.sliderHeight + 10 then
+    local knobX = self.sliderX + self.sliderValue * SLIDER.width
+    local knobY = self.sliderY + SLIDER.height / 2
+    if math.sqrt((x - knobX)^2 + (y - knobY)^2) <= SLIDER.knobRadius + 10 then
         self.dragging = true
         return
+    elseif x >= self.sliderX and x <= self.sliderX + SLIDER.width and
+           y >= self.sliderY - 10 and y <= self.sliderY + SLIDER.height + 10 then
+        self.dragging = true
+        self.sliderValue = (x - self.sliderX) / SLIDER.width
+        love.audio.setVolume(self.sliderValue)
+        return
     end
 
-    -- Check if the Back button was clicked.
-    local buttonWidth = 200
-    local buttonHeight = 40
-    local buttonX = (self.screenWidth - buttonWidth) / 2
+    local buttonX = (self.screenWidth - BUTTON.width) / 2
     local buttonY = self.screenHeight * 0.8
-    if x >= buttonX and x <= buttonX + buttonWidth and 
-       y >= buttonY and y <= buttonY + buttonHeight then
+    if x >= buttonX and x <= buttonX + BUTTON.width and y >= buttonY and y <= buttonY + BUTTON.height then
         self.changeSceneCallback("mainmenu")
-        return
     end
 end
 
---------------------------------------------------
--- keypressed(key):
--- Allows the user to return to the main menu using the ESC key.
---------------------------------------------------
 function Settings:keypressed(key)
     if key == "escape" then
         self.changeSceneCallback("mainmenu")
