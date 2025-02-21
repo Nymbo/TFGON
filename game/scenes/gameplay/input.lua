@@ -1,5 +1,6 @@
 -- game/scenes/gameplay/input.lua
 -- Handles mouse input for the gameplay scene with variable board sizes
+-- Now includes mouse coordinate scaling
 
 local CardRenderer = require("game.ui.cardrenderer")
 local BoardRenderer = require("game.ui.boardrenderer")
@@ -18,10 +19,21 @@ local function isPointInRect(x, y, rx, ry, rw, rh)
     return x >= rx and x <= rx + rw and y >= ry and y <= ry + rh
 end
 
+-- Helper function to get scaled mouse position (same as in main.lua)
+-- This is a duplicate to keep the module self-contained
+local function getScaledMousePosition()
+    local mx, my = love.mouse.getPosition()
+    -- Access the global scale and offset variables from main.lua
+    local scale = _G.scale or {x = 1, y = 1}
+    local offset = _G.offset or {x = 0, y = 0}
+    return mx * scale.x + offset.x, my * scale.y + offset.y
+end
+
 local InputSystem = {}
 
 function InputSystem.checkEndTurnHover(gameplay)
-    local mx, my = love.mouse.getPosition()
+    -- Use scaled mouse coordinates
+    local mx, my = getScaledMousePosition()
     local buttonX = love.graphics.getWidth() - END_TURN_BUTTON.width - 20
     local buttonY = love.graphics.getHeight() / 2 - END_TURN_BUTTON.height / 2
     return isPointInRect(mx, my, buttonX, buttonY, END_TURN_BUTTON.width, END_TURN_BUTTON.height)
@@ -31,6 +43,8 @@ function InputSystem.mousepressed(gameplay, x, y, button, istouch, presses)
     if button ~= 1 then
         return -- Only handle left-click
     end
+
+    -- Note: x and y coming in should already be scaled by love.mousepressed in main.lua
 
     local gm = gameplay.gameManager
     local board = gm.board

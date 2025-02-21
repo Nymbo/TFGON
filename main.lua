@@ -4,7 +4,7 @@
 -- updates/draw calls to the SceneManager.
 -- 
 -- New additions:
--- 1. A custom cursor is loaded from "assets/images/cursor.png" and applied.
+-- 1. A custom cursor is loaded from "assets/images/cursor.png" and applied with adjusted hotspot.
 -- 2. A click sound is loaded from "assets/sounds/click1.ogg" and played on each left click.
 
 --------------------------------------------------
@@ -33,9 +33,10 @@ function love.load()
     local fancyFont = love.graphics.newFont("assets/fonts/InknutAntiqua-Regular.ttf", 14)
     love.graphics.setFont(fancyFont)
     
-    -- Load and set the custom cursor.
-    -- Change the hotspot (second and third parameters) if you prefer a different alignment.
-    local customCursor = love.mouse.newCursor("assets/images/cursor.png", 0, 0)
+    -- Load and set the custom cursor with adjusted hotspot coordinates.
+    -- The hotspot values (30, 18) represent the point where clicks are registered,
+    -- fixing the alignment issue without needing coordinate transformations.
+    local customCursor = love.mouse.newCursor("assets/images/cursor.png", 30, 18)
     love.mouse.setCursor(customCursor)
     
     -- Load the click sound effect.
