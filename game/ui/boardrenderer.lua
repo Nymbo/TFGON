@@ -1,17 +1,12 @@
 -- game/ui/boardrenderer.lua
--- Renders the grid-based board with spawn zones, minions, towers, and cell coordinate labels.
--- Uses the centralized UI theme from game/ui/theme.lua.
+-- Renders the grid-based board with variable dimensions
 
 local BoardRenderer = {}
 local Theme = require("game.ui.theme")
 
 local TILE_SIZE = 100
-local BOARD_COLS = 9
-local BOARD_ROWS = 9
-local boardWidth = TILE_SIZE * BOARD_COLS
-local boardHeight = TILE_SIZE * BOARD_ROWS
-local boardX = (love.graphics.getWidth() - boardWidth) / 2
-local boardY = 50
+local boardX = 0  -- Will be calculated based on board size
+local boardY = 50 -- Top margin
 
 local boardFonts = nil  -- Initialized in drawMinion
 
@@ -32,7 +27,7 @@ local function drawStatCircle(x, y, value, circleColor, bgColor)
     love.graphics.circle("line", x, y, CIRCLE_RADIUS)
 
     local valueStr = tostring(value)
-    love.graphics.setFont(boardFonts.cardStat)  -- Changed from .stat to .cardStat
+    love.graphics.setFont(boardFonts.cardStat)
     local textWidth = boardFonts.cardStat:getWidth(valueStr)
     local textHeight = boardFonts.cardStat:getHeight()
     local textX = x - textWidth / 2
@@ -91,12 +86,19 @@ end
 function BoardRenderer.drawBoard(board, player1, player2, selectedMinion, currentPlayer, gameManager)
     if not boardFonts then boardFonts = Theme.fonts end
 
-    for y = 1, BOARD_ROWS do
-        for x = 1, BOARD_COLS do
+    -- Calculate board dimensions based on the board's rows and columns
+    local boardWidth = TILE_SIZE * board.cols
+    local boardHeight = TILE_SIZE * board.rows
+    
+    -- Center the board horizontally
+    boardX = (love.graphics.getWidth() - boardWidth) / 2
+
+    for y = 1, board.rows do
+        for x = 1, board.cols do
             local cellX = boardX + (x - 1) * TILE_SIZE
             local cellY = boardY + (y - 1) * TILE_SIZE
 
-            if y == 1 or y == BOARD_ROWS then
+            if y == 1 or y == board.rows then
                 love.graphics.setColor(Theme.colors.spawnZone)
                 love.graphics.rectangle("fill", cellX, cellY, TILE_SIZE, TILE_SIZE)
             end
@@ -117,8 +119,8 @@ function BoardRenderer.drawBoard(board, player1, player2, selectedMinion, curren
         local sx = selectedMinion.position.x
         local sy = selectedMinion.position.y
         local moveRange = selectedMinion.movement or 1
-        for yy = 1, BOARD_ROWS do
-            for xx = 1, BOARD_COLS do
+        for yy = 1, board.rows do
+            for xx = 1, board.cols do
                 local dist = math.max(math.abs(xx - sx), math.abs(yy - sy))
                 if dist <= moveRange and board:isEmpty(xx, yy) and not gameManager:isTileOccupiedByTower(xx, yy) then
                     local tileX = boardX + (xx - 1) * TILE_SIZE
@@ -136,6 +138,7 @@ function BoardRenderer.drawBoard(board, player1, player2, selectedMinion, curren
         drawMinion(minion, x, y, currentPlayer)
     end)
 
+    -- Draw tower for player 1 if it exists
     if player1.tower then
         local tower = player1.tower
         local towerX = boardX + (tower.position.x - 1) * TILE_SIZE
@@ -147,6 +150,8 @@ function BoardRenderer.drawBoard(board, player1, player2, selectedMinion, curren
         love.graphics.setColor(Theme.colors.textPrimary)
         love.graphics.printf(tostring(tower.hp), towerX, towerY + (TILE_SIZE - boardFonts.cardName:getHeight()) / 2, TILE_SIZE, "center")
     end
+    
+    -- Draw tower for player 2 if it exists
     if player2.tower then
         local tower = player2.tower
         local towerX = boardX + (tower.position.x - 1) * TILE_SIZE
@@ -169,6 +174,16 @@ function BoardRenderer.drawBoard(board, player1, player2, selectedMinion, curren
     end
 
     love.graphics.setColor(1, 1, 1, 1)
+end
+
+-- Return the current boardX and boardY values for other systems
+function BoardRenderer.getBoardPosition()
+    return boardX, boardY
+end
+
+-- Return the tile size for calculations
+function BoardRenderer.getTileSize()
+    return TILE_SIZE
 end
 
 return BoardRenderer

@@ -1,12 +1,16 @@
 -- game/core/board.lua
--- This module now implements a 9x9 grid board.
+-- This module now creates boards based on provided configuration.
 local Board = {}
 Board.__index = Board
 
-function Board:new()
+function Board:new(config)
     local self = setmetatable({}, Board)
-    self.cols = 9  -- Updated from 7 to 9 columns
-    self.rows = 9  -- Updated from 6 to 9 rows
+    
+    -- Use config or default to 9x9
+    config = config or {}
+    self.cols = config.cols or 9
+    self.rows = config.rows or 9
+    
     -- Initialize a 2D array for tiles: tiles[y][x]
     self.tiles = {}
     for y = 1, self.rows do
@@ -15,6 +19,10 @@ function Board:new()
             self.tiles[y][x] = nil
         end
     end
+    
+    -- Store the tower positions if any
+    self.towerPositions = config.towerPositions
+    
     return self
 end
 

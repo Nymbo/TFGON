@@ -1,11 +1,9 @@
 -- game/scenes/gameplay/input.lua
--- Handles mouse input for the gameplay scene with the new grid board.
--- Now supports a pending summon state: when a minion card is clicked,
--- the player must then click a tile in their spawn zone to summon it.
--- Also ensures that minions cannot move to or be summoned on tiles occupied by a tower.
+-- Handles mouse input for the gameplay scene with variable board sizes
 
 local CardRenderer = require("game.ui.cardrenderer")
-local Theme = require("game.ui.theme")  -- Import the UI theme
+local BoardRenderer = require("game.ui.boardrenderer")
+local Theme = require("game.ui.theme")
 
 -- Use dimensions from the theme for the End Turn button
 local END_TURN_BUTTON = {
@@ -13,14 +11,8 @@ local END_TURN_BUTTON = {
     height = Theme.dimensions.buttonHeight
 }
 
--- Grid board constants
-local TILE_SIZE = 100  -- Updated to match the new board tile size
-local BOARD_COLS = 9   -- Updated to 9 columns
-local BOARD_ROWS = 9   -- Updated to 9 rows
-local boardWidth = TILE_SIZE * BOARD_COLS
-local boardHeight = TILE_SIZE * BOARD_ROWS
-local boardX = (love.graphics.getWidth() - boardWidth) / 2
-local boardY = 50  -- top margin
+-- Get the tile size from BoardRenderer
+local TILE_SIZE = BoardRenderer.getTileSize()
 
 local function isPointInRect(x, y, rx, ry, rw, rh)
     return x >= rx and x <= rx + rw and y >= ry and y <= ry + rh
@@ -41,8 +33,14 @@ function InputSystem.mousepressed(gameplay, x, y, button, istouch, presses)
     end
 
     local gm = gameplay.gameManager
+    local board = gm.board
     local currentPlayer = gm:getCurrentPlayer()
     local enemy = gm:getEnemyPlayer(currentPlayer)
+
+    -- Get current board position from the renderer
+    local boardX, boardY = BoardRenderer.getBoardPosition()
+    local boardWidth = TILE_SIZE * board.cols
+    local boardHeight = TILE_SIZE * board.rows
 
     --------------------------------------------------
     -- 1) End Turn button click check
@@ -90,7 +88,7 @@ function InputSystem.mousepressed(gameplay, x, y, button, istouch, presses)
         local cellY = math.floor((y - boardY) / TILE_SIZE) + 1
 
         -- Check if clicked cell is the enemy tower's location (for tower attacks)
-        if cellX == enemy.tower.position.x and cellY == enemy.tower.position.y then
+        if enemy.tower and cellX == enemy.tower.position.x and cellY == enemy.tower.position.y then
             if gameplay.selectedMinion then
                 -- If the minion is not allowed to attack, clear selection.
                 if not gameplay.selectedMinion.canAttack then
@@ -113,7 +111,7 @@ function InputSystem.mousepressed(gameplay, x, y, button, istouch, presses)
         -- If there's a pending summon, handle summoning first.
         if gameplay.pendingSummon then
             local pending = gameplay.pendingSummon
-            local validSpawnRow = (pending.player == gm.player1) and BOARD_ROWS or 1
+            local validSpawnRow = (pending.player == gm.player1) and board.rows or 1
             if gm:isTileOccupiedByTower(cellX, cellY) then
                 print("Cannot summon minion onto a tower!")
                 return

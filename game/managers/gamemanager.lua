@@ -1,7 +1,5 @@
 -- game/managers/gamemanager.lua
--- Updated to accept a selected deck for player 1
--- and trigger a callback ("onTurnStart") whenever a new turn begins.
--- Also updated to use Tower objects for towers.
+-- Updated to accept a selected board configuration as well as deck
 
 local Player = require("game.core.player")
 local Board = require("game.core.board")
@@ -15,15 +13,18 @@ GameManager.__index = GameManager
 --------------------------------------------------
 -- Constructor for GameManager.
 -- 'selectedDeck' is used for player 1.
+-- 'selectedBoard' is the board configuration to use.
 -- Added "self.onTurnStart = nil" for hooking into turn-start events.
 --------------------------------------------------
-function GameManager:new(selectedDeck)
+function GameManager:new(selectedDeck, selectedBoard)
     local self = setmetatable({}, GameManager)
 
     -- Create players; assign custom deck to player 1 if provided.
     self.player1 = Player:new("Player 1", selectedDeck)
     self.player2 = Player:new("Player 2")
-    self.board = Board:new()
+    
+    -- Create board from selected configuration or use default
+    self.board = Board:new(selectedBoard)
 
     self.currentPlayer = 1
 
@@ -33,19 +34,28 @@ function GameManager:new(selectedDeck)
     self.player1:drawCard(3)
     self.player2:drawCard(3)
     
-    -- Initialize towers for each player using the Tower object.
-    self.player1.tower = Tower:new({
-        owner = self.player1,
-        position = { x = 5, y = 8 },
-        hp = 30,
-        imagePath = "assets/images/panel_grey_bolts_blue.png"
-    })
-    self.player2.tower = Tower:new({
-        owner = self.player2,
-        position = { x = 5, y = 2 },
-        hp = 30,
-        imagePath = "assets/images/panel_grey_bolts_red.png"
-    })
+    -- Initialize towers if the board has tower positions
+    if selectedBoard and selectedBoard.towerPositions then
+        -- Player 1 tower
+        if selectedBoard.towerPositions.player1 then
+            self.player1.tower = Tower:new({
+                owner = self.player1,
+                position = selectedBoard.towerPositions.player1,
+                hp = 30,
+                imagePath = "assets/images/panel_grey_bolts_blue.png"
+            })
+        end
+        
+        -- Player 2 tower
+        if selectedBoard.towerPositions.player2 then
+            self.player2.tower = Tower:new({
+                owner = self.player2,
+                position = selectedBoard.towerPositions.player2,
+                hp = 30,
+                imagePath = "assets/images/panel_grey_bolts_red.png"
+            })
+        end
+    end
 
     -- Callback that the Gameplay scene can set to display banners, etc.
     self.onTurnStart = nil
@@ -65,8 +75,15 @@ function GameManager:update(dt) end
 --------------------------------------------------
 function GameManager:draw()
     love.graphics.printf("Current Turn: " .. self:getCurrentPlayer().name, 0, 20, love.graphics.getWidth(), "center")
-    love.graphics.printf(self.player1.name .. " Tower HP: " .. self.player1.tower.hp, 0, 60, love.graphics.getWidth(), "left")
-    love.graphics.printf(self.player2.name .. " Tower HP: " .. self.player2.tower.hp, 0, 80, love.graphics.getWidth(), "left")
+    
+    -- Only display tower HP if towers exist
+    if self.player1.tower then
+        love.graphics.printf(self.player1.name .. " Tower HP: " .. self.player1.tower.hp, 0, 60, love.graphics.getWidth(), "left")
+    end
+    
+    if self.player2.tower then
+        love.graphics.printf(self.player2.name .. " Tower HP: " .. self.player2.tower.hp, 0, 80, love.graphics.getWidth(), "left")
+    end
 end
 
 --------------------------------------------------
@@ -134,12 +151,10 @@ end
 -- Checks if the given tile coordinates are occupied by a tower.
 --------------------------------------------------
 function GameManager:isTileOccupiedByTower(x, y)
-    local p1Tower = self.player1.tower
-    local p2Tower = self.player2.tower
-    if p1Tower and p1Tower.position.x == x and p1Tower.position.y == y then
+    if self.player1.tower and self.player1.tower.position.x == x and self.player1.tower.position.y == y then
         return true
     end
-    if p2Tower and p2Tower.position.x == x and p2Tower.position.y == y then
+    if self.player2.tower and self.player2.tower.position.x == x and self.player2.tower.position.y == y then
         return true
     end
     return false
@@ -170,7 +185,10 @@ function GameManager:playCardFromHand(player, cardIndex)
     end
     player.manaCrystals = player.manaCrystals - card.cost
     table.remove(player.hand, cardIndex)
-    if self.player1.tower.hp <= 0 or self.player2.tower.hp <= 0 then
+    
+    -- Only check tower health if towers exist
+    if (self.player1.tower and self.player1.tower.hp <= 0) or 
+       (self.player2.tower and self.player2.tower.hp <= 0) then
         self:endGame()
     end
 end
@@ -212,9 +230,14 @@ function GameManager:summonMinion(player, card, cardIndex, x, y)
     if success then
         EffectManager.triggerBattlecry(card, self, player)
         table.remove(player.hand, cardIndex)
-        if self.player1.tower.hp <= 0 or self.player2.tower.hp <= 0 then
+        player.manaCrystals = player.manaCrystals - card.cost
+        
+        -- Only check tower health if towers exist
+        if (self.player1.tower and self.player1.tower.hp <= 0) or 
+           (self.player2.tower and self.player2.tower.hp <= 0) then
             self:endGame()
         end
+        
         return true
     else
         print("Failed to place minion: spawn zone full!")
@@ -228,6 +251,33 @@ end
 --------------------------------------------------
 function GameManager:endGame()
     print("Game Over!")
+    
+    -- Determine the winner based on tower health or other conditions
+    local winner = nil
+    
+    -- If there are towers, check which one is destroyed
+    if self.player1.tower and self.player2.tower then
+        if self.player1.tower.hp <= 0 then
+            winner = self.player2
+        elseif self.player2.tower.hp <= 0 then
+            winner = self.player1
+        end
+    end
+    
+    -- If no towers, maybe check player health instead
+    if not winner then
+        if self.player1.health <= 0 then
+            winner = self.player2
+        elseif self.player2.health <= 0 then
+            winner = self.player1
+        end
+    end
+    
+    if winner then
+        print(winner.name .. " wins the match!")
+    else
+        print("The match ends in a draw.")
+    end
 end
 
 return GameManager

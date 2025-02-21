@@ -85,6 +85,24 @@ return {
         movement = 1,
         archetype = "Ranged"
     },
+    {
+        name = "Quickfoot McGee",
+        cardType = "Minion",
+        cost = 1,
+        attack = 1,
+        health = 2,
+        movement = 3,
+        archetype = "Melee"
+    },
+    {
+        name = "Hair-trigger Bandit",
+        cardType = "Minion",
+        cost = 3,
+        attack = 4,
+        health = 3,
+        movement = 2,
+        archetype = "Ranged"
+    },
 
     --------------------------------------------------
     -- Weapon (refactored to use effectKey)

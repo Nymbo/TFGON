@@ -1,10 +1,11 @@
 -- game/scenes/deckselection.lua
--- Deck selection scene with unified Theme styling
+-- Deck selection scene with unified Theme styling and board selection
 
 local DeckSelection = {}
 DeckSelection.__index = DeckSelection
 
 local DeckManager = require("game.managers.deckmanager")
+local BoardRegistry = require("game.core.boardregistry")
 local Theme = require("game.ui.theme")
 
 --------------------------------------------------
@@ -18,6 +19,10 @@ function DeckSelection:new(changeSceneCallback)
     DeckManager:init()
     self.decks = DeckManager.decks
     self.selectedDeckIndex = 1
+    
+    -- Initialize board selection
+    self.selectedBoardIndex = 1
+    self.boards = BoardRegistry.boards
 
     -- Load background image
     self.background = love.graphics.newImage("assets/images/mainmenu_background.png")
@@ -36,6 +41,13 @@ function DeckSelection:new(changeSceneCallback)
     self.buttonWidth = Theme.dimensions.buttonWidth * 1.5  -- Slightly wider buttons
     self.buttonHeight = Theme.dimensions.buttonHeight
     self.buttonSpacing = 20
+    
+    -- Board selector dimensions and state
+    self.boardSelectorRadius = 120
+    self.boardSelectorCenterX = self.panelX + self.panelWidth * 0.75
+    self.boardSelectorCenterY = self.panelY + self.panelHeight * 0.45
+    self.boardItemRadius = 40
+    self.boardHoveredIndex = nil
 
     return self
 end
@@ -49,6 +61,21 @@ function DeckSelection:update(dt)
     -- Update hover states for buttons
     self.playHovered = self:isPointInButton(mx, my, "play")
     self.backHovered = self:isPointInButton(mx, my, "back")
+    
+    -- Update hover state for board selector
+    self.boardHoveredIndex = nil
+    for i = 1, #self.boards do
+        local angle = (i - 1) * (2 * math.pi / #self.boards)
+        local itemX = self.boardSelectorCenterX + math.cos(angle) * self.boardSelectorRadius
+        local itemY = self.boardSelectorCenterY + math.sin(angle) * self.boardSelectorRadius
+        
+        -- Check if mouse is hovering over this board item
+        local dist = math.sqrt((mx - itemX)^2 + (my - itemY)^2)
+        if dist <= self.boardItemRadius then
+            self.boardHoveredIndex = i
+            break
+        end
+    end
 end
 
 --------------------------------------------------
@@ -125,9 +152,6 @@ function DeckSelection:drawThemedButton(text, x, y, width, height, isHovered)
 end
 
 --------------------------------------------------
--- draw: Render the deck selection scene
---------------------------------------------------
---------------------------------------------------
 -- Helper: Draw scaled background image
 --------------------------------------------------
 function DeckSelection:drawScaledBackground()
@@ -175,7 +199,7 @@ function DeckSelection:draw()
     for i, deck in ipairs(self.decks) do
         local slotY = slotsStartY + (i-1) * (slotHeight + slotSpacing)
         local slotX = self.panelX + 40
-        local slotWidth = self.panelWidth - 80
+        local slotWidth = self.panelWidth * 0.4 - 60  -- Narrower to make room for board selector
         
         -- Slot background
         love.graphics.setColor(i == self.selectedDeckIndex and Theme.colors.buttonHover or Theme.colors.buttonBase)
@@ -202,6 +226,56 @@ function DeckSelection:draw()
         )
     end
 
+    -- Draw the board selector section
+    love.graphics.setFont(Theme.fonts.subtitle)
+    love.graphics.setColor(Theme.colors.textPrimary)
+    love.graphics.printf("Select Board", self.boardSelectorCenterX - 150, self.panelY + 130, 300, "center")
+    
+    -- Draw center label with selected board name
+    love.graphics.setFont(Theme.fonts.body)
+    love.graphics.setColor(Theme.colors.textHover)
+    love.graphics.printf(
+        self.boards[self.selectedBoardIndex].name,
+        self.boardSelectorCenterX - 100,
+        self.boardSelectorCenterY - 10,
+        200,
+        "center"
+    )
+    
+    -- Draw the board selector ring
+    love.graphics.setColor(Theme.colors.buttonBorder)
+    love.graphics.setLineWidth(2)
+    love.graphics.circle("line", self.boardSelectorCenterX, self.boardSelectorCenterY, self.boardSelectorRadius)
+    
+    -- Draw board options around the circle
+    for i = 1, #self.boards do
+        local angle = (i - 1) * (2 * math.pi / #self.boards)
+        local itemX = self.boardSelectorCenterX + math.cos(angle) * self.boardSelectorRadius
+        local itemY = self.boardSelectorCenterY + math.sin(angle) * self.boardSelectorRadius
+        
+        -- Draw board item circle
+        local isSelected = (i == self.selectedBoardIndex)
+        local isHovered = (i == self.boardHoveredIndex)
+        
+        -- Glow effect for hover/selection
+        if isSelected or isHovered then
+            love.graphics.setColor(Theme.colors.buttonGlowHover)
+            love.graphics.circle("fill", itemX, itemY, self.boardItemRadius + 5)
+        end
+        
+        -- Board item background
+        love.graphics.setColor(isSelected and Theme.colors.buttonBorder or Theme.colors.buttonBase)
+        love.graphics.circle("fill", itemX, itemY, self.boardItemRadius)
+        
+        -- Draw board number
+        love.graphics.setFont(Theme.fonts.body)
+        love.graphics.setColor(Theme.colors.textPrimary)
+        local str = tostring(i)
+        local textWidth = Theme.fonts.body:getWidth(str)
+        local textHeight = Theme.fonts.body:getHeight()
+        love.graphics.print(str, itemX - textWidth/2, itemY - textHeight/2)
+    end
+    
     -- Draw buttons
     local buttonX = (self.screenWidth - self.buttonWidth) / 2
     
@@ -224,6 +298,17 @@ function DeckSelection:draw()
         self.buttonHeight,
         self.backHovered
     )
+    
+    -- Draw board description below the board selector
+    love.graphics.setFont(Theme.fonts.body)
+    love.graphics.setColor(Theme.colors.textSecondary)
+    love.graphics.printf(
+        self.boards[self.selectedBoardIndex].description,
+        self.boardSelectorCenterX - 150,
+        self.boardSelectorCenterY + self.boardSelectorRadius + 20,
+        300,
+        "center"
+    )
 end
 
 --------------------------------------------------
@@ -237,7 +322,7 @@ function DeckSelection:mousepressed(x, y, button, istouch, presses)
     local slotSpacing = 10
     local slotsStartY = self.panelY + 120
     local slotX = self.panelX + 40
-    local slotWidth = self.panelWidth - 80
+    local slotWidth = self.panelWidth * 0.4 - 60  -- Same as in draw
 
     for i = 1, #self.decks do
         local slotY = slotsStartY + (i-1) * (slotHeight + slotSpacing)
@@ -247,10 +332,23 @@ function DeckSelection:mousepressed(x, y, button, istouch, presses)
             return
         end
     end
+    
+    -- Check board selector clicks
+    for i = 1, #self.boards do
+        local angle = (i - 1) * (2 * math.pi / #self.boards)
+        local itemX = self.boardSelectorCenterX + math.cos(angle) * self.boardSelectorRadius
+        local itemY = self.boardSelectorCenterY + math.sin(angle) * self.boardSelectorRadius
+        
+        local dist = math.sqrt((x - itemX)^2 + (y - itemY)^2)
+        if dist <= self.boardItemRadius then
+            self.selectedBoardIndex = i
+            return
+        end
+    end
 
     -- Check button clicks
     if self:isPointInButton(x, y, "play") then
-        self.changeSceneCallback("gameplay", self.decks[self.selectedDeckIndex])
+        self.changeSceneCallback("gameplay", self.decks[self.selectedDeckIndex], self.boards[self.selectedBoardIndex])
     elseif self:isPointInButton(x, y, "back") then
         self.changeSceneCallback("mainmenu")
     end
@@ -266,9 +364,13 @@ function DeckSelection:keypressed(key)
         self.selectedDeckIndex = math.max(1, self.selectedDeckIndex - 1)
     elseif key == "down" then
         self.selectedDeckIndex = math.min(#self.decks, self.selectedDeckIndex + 1)
+    elseif key == "left" then
+        self.selectedBoardIndex = (self.selectedBoardIndex - 2) % #self.boards + 1
+    elseif key == "right" then
+        self.selectedBoardIndex = self.selectedBoardIndex % #self.boards + 1
     elseif key == "return" or key == "space" then
         if self.selectedDeckIndex > 0 then
-            self.changeSceneCallback("gameplay", self.decks[self.selectedDeckIndex])
+            self.changeSceneCallback("gameplay", self.decks[self.selectedDeckIndex], self.boards[self.selectedBoardIndex])
         end
     end
 end
