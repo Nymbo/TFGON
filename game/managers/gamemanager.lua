@@ -42,7 +42,7 @@ function GameManager:new(selectedDeck, selectedBoard)
                 owner = self.player1,
                 position = selectedBoard.towerPositions.player1,
                 hp = 30,
-                imagePath = "assets/images/panel_grey_bolts_blue.png"
+                imagePath = "assets/images/blue_tower.png"
             })
         end
         
@@ -52,7 +52,7 @@ function GameManager:new(selectedDeck, selectedBoard)
                 owner = self.player2,
                 position = selectedBoard.towerPositions.player2,
                 hp = 30,
-                imagePath = "assets/images/panel_grey_bolts_red.png"
+                imagePath = "assets/images/red_tower.png"
             })
         end
     end

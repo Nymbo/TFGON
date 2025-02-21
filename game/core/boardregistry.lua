@@ -2,8 +2,10 @@
 local BoardRegistry = {}
 
 -- Store board definitions
+
+-- BOARD Y COORDINATES ARE FLIPPED IN LOVE2D (TOP-LEFT TO BOTTOM-RIGHT)
+
 BoardRegistry.boards = {
-    -- Standard 9x9 board with towers
     {
         name = "Standard Arena",
         description = "Classic 9x9 grid with centered towers",
@@ -15,7 +17,17 @@ BoardRegistry.boards = {
         },
         imagePath = "assets/images/standard_board.png"
     },
-    -- New 7x7 board with towers
+    {
+        name = "Wide Arena",
+        description = "Classic 11x8 grid with centered towers",
+        rows = 8,
+        cols = 11,
+        towerPositions = {
+            player1 = { x = 6, y = 7 },
+            player2 = { x = 6, y = 2 }
+        },
+        imagePath = "assets/images/open_field_board.png"
+    },
     {
         name = "Compact Arena",
         description = "Compact 7x7 grid with centered towers",
@@ -27,7 +39,6 @@ BoardRegistry.boards = {
         },
         imagePath = "assets/images/open_field_board.png"
     },
-    -- New 8x8 board with no towers
     {
         name = "Open Field",
         description = "Open 8x8 grid with no defensive structures",
