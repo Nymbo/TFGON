@@ -67,7 +67,7 @@ function DrawSystem.drawGameplayScene(gameplay)
 
     love.graphics.setColor(END_TURN_BUTTON.colors.buttonShadow)
     love.graphics.rectangle(
-        "fill",
+        "fill", 
         buttonX + END_TURN_BUTTON.shadowOffset,
         buttonY + END_TURN_BUTTON.shadowOffset,
         END_TURN_BUTTON.width,
@@ -102,7 +102,7 @@ function DrawSystem.drawGameplayScene(gameplay)
         buttonX + 2,
         buttonY + 2,
         END_TURN_BUTTON.width - 4,
-        END_TURN_BUTTON.height / 2,
+        END_TURN_BUTTON.height/2 - 2,
         END_TURN_BUTTON.cornerRadius
     )
 
@@ -125,7 +125,7 @@ function DrawSystem.drawGameplayScene(gameplay)
     love.graphics.printf(
         "End Turn",
         buttonX,
-        buttonY + (END_TURN_BUTTON.height - END_TURN_BUTTON.font:getHeight()) / 2,
+        buttonY + (END_TURN_BUTTON.height - END_TURN_BUTTON.font:getHeight())/2,
         END_TURN_BUTTON.width,
         "center"
     )
@@ -134,6 +134,35 @@ function DrawSystem.drawGameplayScene(gameplay)
     local turnIndicatorY = buttonY + END_TURN_BUTTON.height + 10
     love.graphics.setColor(END_TURN_BUTTON.colors.textPrimary)
     love.graphics.printf(currentTurnText, buttonX, turnIndicatorY, END_TURN_BUTTON.width, "center")
+
+    -- NEW: Draw Mana Frames for both players using "FrameRound.png"
+    -- Ensure the mana frame image is loaded only once
+    if not DrawSystem.manaFrame then
+        DrawSystem.manaFrame = love.graphics.newImage("assets/images/FrameRound.png")
+        DrawSystem.manaFrameScale = 0.16  -- Scale so that the 512x512 image becomes roughly 80x80
+    end
+    local manaFrame = DrawSystem.manaFrame
+    local manaScale = DrawSystem.manaFrameScale
+    local frameWidth = manaFrame:getWidth() * manaScale
+    local frameHeight = manaFrame:getHeight() * manaScale
+
+    -- Draw Player 2's Mana (displayed near the top of the screen)
+    local p2ManaText = tostring(gm.player2.manaCrystals) .. "/" .. tostring(gm.player2.maxManaCrystals)
+    local p2X = buttonX  -- align x with End Turn button
+    local p2Y = 20       -- near the top
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.draw(manaFrame, p2X, p2Y, 0, manaScale, manaScale)
+    local manaFont = love.graphics.newFont("assets/fonts/InknutAntiqua-Regular.ttf", 24)
+    love.graphics.setFont(manaFont)
+    love.graphics.setColor(Theme.colors.textPrimary)
+    love.graphics.printf(p2ManaText, p2X, p2Y + (frameHeight - manaFont:getHeight())/2, frameWidth, "center")
+
+    -- Draw Player 1's Mana (displayed near the bottom of the screen)
+    local p1ManaText = tostring(gm.player1.manaCrystals) .. "/" .. tostring(gm.player1.maxManaCrystals)
+    local p1X = buttonX
+    local p1Y = love.graphics.getHeight() - frameHeight - 20
+    love.graphics.draw(manaFrame, p1X, p1Y, 0, manaScale, manaScale)
+    love.graphics.printf(p1ManaText, p1X, p1Y + (frameHeight - manaFont:getHeight())/2, frameWidth, "center")
 
     love.graphics.setColor(1, 1, 1, 1)
 end
