@@ -15,6 +15,39 @@ local CARD_CORNER_RADIUS = 6
 local PAD_X = 14
 local PAD_Y = 14
 
+-- Load the attack pattern overlay image
+local attackPattern = love.graphics.newImage("assets/images/pattern_diagonal_red_small.png")
+
+--------------------------------------------------
+-- Helper: Get the reach of a minion based on its archetype
+--------------------------------------------------
+local function getMinionReach(minion)
+    if minion.archetype == "Melee" then
+        return 1
+    elseif minion.archetype == "Magic" then
+        return 2
+    elseif minion.archetype == "Ranged" then
+        return 3
+    end
+    return 1 -- default
+end
+
+--------------------------------------------------
+-- Helper: Check if a minion is in attack range of another
+--------------------------------------------------
+local function isInAttackRange(attacker, target)
+    if not attacker.position or not target.position then
+        return false
+    end
+    
+    local dx = math.abs(attacker.position.x - target.position.x)
+    local dy = math.abs(attacker.position.y - target.position.y)
+    local distance = math.max(dx, dy)
+    local reach = getMinionReach(attacker)
+    
+    return distance <= reach
+end
+
 --------------------------------------------------
 -- drawStatCircle: Helper to draw stat circles
 --------------------------------------------------
@@ -45,7 +78,7 @@ end
 --------------------------------------------------
 -- drawMinion: Renders a minion in its grid cell
 --------------------------------------------------
-local function drawMinion(minion, cellX, cellY, currentPlayer)
+local function drawMinion(minion, cellX, cellY, currentPlayer, selectedMinion)
     if not boardFonts then boardFonts = Theme.fonts end
 
     local x = boardX + (cellX - 1) * TILE_SIZE
@@ -72,11 +105,45 @@ local function drawMinion(minion, cellX, cellY, currentPlayer)
     drawStatCircle(x + PAD_X, y + TILE_SIZE - PAD_Y, minion.attack, Theme.colors.attackCircle, Theme.colors.attackBg)
     drawStatCircle(x + TILE_SIZE - PAD_X, y + TILE_SIZE - PAD_Y, minion.currentHealth, Theme.colors.healthCircle, Theme.colors.healthBg)
 
-    if minion.canAttack and minion.owner == currentPlayer then
-        love.graphics.setColor(Theme.colors.accentGreen)
-        love.graphics.setLineWidth(3)
-        love.graphics.rectangle("line", x, y, TILE_SIZE, TILE_SIZE, CARD_CORNER_RADIUS)
-        love.graphics.setLineWidth(1)
+    -- Draw outlines for movement and attack
+    if minion.owner == currentPlayer then
+        -- Blue outline for movement available
+        if not minion.hasMoved and not minion.summoningSickness then
+            love.graphics.setColor(Theme.colors.accentBlue)
+            love.graphics.setLineWidth(3)
+            love.graphics.rectangle("line", x, y, TILE_SIZE, TILE_SIZE, CARD_CORNER_RADIUS)
+            love.graphics.setLineWidth(1)
+        -- Green outline for attack available (only if can't move)
+        elseif minion.canAttack then
+            love.graphics.setColor(Theme.colors.accentGreen)
+            love.graphics.setLineWidth(3)
+            love.graphics.rectangle("line", x, y, TILE_SIZE, TILE_SIZE, CARD_CORNER_RADIUS)
+            love.graphics.setLineWidth(1)
+        end
+    end
+
+    -- Draw attack pattern overlay on targetable minions
+    if selectedMinion and 
+       selectedMinion.owner == currentPlayer and 
+       selectedMinion.canAttack and 
+       minion.owner ~= currentPlayer and
+       isInAttackRange(selectedMinion, minion) then
+        
+        -- Set drawing mode to allow semi-transparency
+        love.graphics.setBlendMode("alpha", "alphamultiply")
+        
+        -- Draw the pattern
+        love.graphics.setColor(1, 1, 1, 0.7)
+        
+        -- Create a repeating pattern using the image
+        local patternW, patternH = attackPattern:getDimensions()
+        local scaleX = TILE_SIZE / patternW
+        local scaleY = TILE_SIZE / patternH
+        
+        love.graphics.draw(attackPattern, x, y, 0, scaleX, scaleY)
+        
+        -- Reset blend mode
+        love.graphics.setBlendMode("alpha")
     end
 end
 
@@ -135,7 +202,7 @@ function BoardRenderer.drawBoard(board, player1, player2, selectedMinion, curren
     end
 
     board:forEachMinion(function(minion, x, y)
-        drawMinion(minion, x, y, currentPlayer)
+        drawMinion(minion, x, y, currentPlayer, selectedMinion)
     end)
 
     -- Draw tower for player 1 if it exists
