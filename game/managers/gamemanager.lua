@@ -1,6 +1,9 @@
 -- game/managers/gamemanager.lua
--- Updated to accept a selected board configuration as well as deck
--- Now also supports AI opponent with custom deck
+-- Updated to accept a selected board configuration as well as deck.
+-- Now supports AI opponent with custom deck and improved win condition checking based solely on Towers.
+-- When a tower reaches 0 HP, it is removed from the board.
+-- When a player has no towers remaining, the game is over.
+-- An onGameOver callback is provided so that the gameplay scene can display a popup.
 
 local Player = require("game.core.player")
 local Board = require("game.core.board")
@@ -16,7 +19,7 @@ GameManager.__index = GameManager
 -- 'selectedDeck' is used for player 1.
 -- 'selectedBoard' is the board configuration to use.
 -- 'isAIOpponent' determines if player 2 should use an AI deck.
--- Added "self.onTurnStart = nil" for hooking into turn-start events.
+-- onTurnStart and onGameOver callbacks can be set.
 --------------------------------------------------
 function GameManager:new(selectedDeck, selectedBoard, isAIOpponent)
     local self = setmetatable({}, GameManager)
@@ -24,7 +27,7 @@ function GameManager:new(selectedDeck, selectedBoard, isAIOpponent)
     -- Create players; assign custom deck to player 1 if provided.
     self.player1 = Player:new("Player 1", selectedDeck)
     
-    -- If AI opponent, set up the AI deck
+    -- If AI opponent, set up the AI deck.
     if isAIOpponent then
         local AIDeck = require("game.data.aidecks")
         local cardsData = require("data.cards")
@@ -34,7 +37,7 @@ function GameManager:new(selectedDeck, selectedBoard, isAIOpponent)
         self.player2 = Player:new("Player 2")
     end
     
-    -- Create board from selected configuration or use default
+    -- Create board from selected configuration or use default.
     self.board = Board:new(selectedBoard)
 
     self.currentPlayer = 1
@@ -45,9 +48,9 @@ function GameManager:new(selectedDeck, selectedBoard, isAIOpponent)
     self.player1:drawCard(3)
     self.player2:drawCard(3)
     
-    -- Initialize towers if the board has tower positions
+    -- Initialize towers if the board has tower positions.
     if selectedBoard and selectedBoard.towerPositions then
-        -- Player 1 tower
+        -- Player 1 tower.
         if selectedBoard.towerPositions.player1 then
             self.player1.tower = Tower:new({
                 owner = self.player1,
@@ -57,7 +60,7 @@ function GameManager:new(selectedDeck, selectedBoard, isAIOpponent)
             })
         end
         
-        -- Player 2 tower
+        -- Player 2 tower.
         if selectedBoard.towerPositions.player2 then
             self.player2.tower = Tower:new({
                 owner = self.player2,
@@ -71,27 +74,47 @@ function GameManager:new(selectedDeck, selectedBoard, isAIOpponent)
     -- Callback that the Gameplay scene can set to display banners, etc.
     self.onTurnStart = nil
 
+    -- Callback to be triggered when the game is over (for a popup menu, etc.)
+    self.onGameOver = nil
+
+    -- Flag to indicate that the game is over so no further actions are processed.
+    self.gameOver = false
+
     return self
 end
 
 --------------------------------------------------
 -- update(dt):
--- Currently does nothing, but is here if needed later.
+-- Continuously checks the win condition.
+-- If a tower's HP falls to 0, it is removed.
+-- The game ends when a player has no tower.
 --------------------------------------------------
-function GameManager:update(dt) end
+function GameManager:update(dt)
+    if not self.gameOver then
+        -- Remove towers that have 0 or less HP.
+        if self.player1.tower and self.player1.tower.hp <= 0 then
+            self.player1.tower = nil
+        end
+        if self.player2.tower and self.player2.tower.hp <= 0 then
+            self.player2.tower = nil
+        end
+        -- Game over if a player no longer has a tower.
+        if not self.player1.tower or not self.player2.tower then
+            self:endGame()
+        end
+    end
+end
 
 --------------------------------------------------
 -- draw():
--- Basic turn info and tower health for debugging.
+-- Displays current turn info and tower HP for debugging.
 --------------------------------------------------
 function GameManager:draw()
     love.graphics.printf("Current Turn: " .. self:getCurrentPlayer().name, 0, 20, love.graphics.getWidth(), "center")
     
-    -- Only display tower HP if towers exist
     if self.player1.tower then
         love.graphics.printf(self.player1.name .. " Tower HP: " .. self.player1.tower.hp, 0, 60, love.graphics.getWidth(), "left")
     end
-    
     if self.player2.tower then
         love.graphics.printf(self.player2.name .. " Tower HP: " .. self.player2.tower.hp, 0, 80, love.graphics.getWidth(), "left")
     end
@@ -112,7 +135,7 @@ end
 
 --------------------------------------------------
 -- startTurn():
--- Gains mana, draws a card, resets minions, triggers onTurnStart callback.
+-- Gains mana, draws a card, resets minions, and triggers onTurnStart callback.
 --------------------------------------------------
 function GameManager:startTurn()
     local player = self:getCurrentPlayer()
@@ -131,7 +154,6 @@ function GameManager:startTurn()
         end
     end)
 
-    -- Trigger the "onTurnStart" callback so the gameplay scene can show banners, etc.
     if self.onTurnStart then
         if self.currentPlayer == 1 then
             self.onTurnStart("player1")
@@ -197,7 +219,6 @@ function GameManager:playCardFromHand(player, cardIndex)
     player.manaCrystals = player.manaCrystals - card.cost
     table.remove(player.hand, cardIndex)
     
-    -- Only check tower health if towers exist
     if (self.player1.tower and self.player1.tower.hp <= 0) or 
        (self.player2.tower and self.player2.tower.hp <= 0) then
         self:endGame()
@@ -243,7 +264,6 @@ function GameManager:summonMinion(player, card, cardIndex, x, y)
         table.remove(player.hand, cardIndex)
         player.manaCrystals = player.manaCrystals - card.cost
         
-        -- Only check tower health if towers exist
         if (self.player1.tower and self.player1.tower.hp <= 0) or 
            (self.player2.tower and self.player2.tower.hp <= 0) then
             self:endGame()
@@ -258,36 +278,32 @@ end
 
 --------------------------------------------------
 -- endGame():
--- Currently just prints "Game Over!" but can trigger a scene change or message.
+-- Ends the game and determines the winner based solely on towers.
+-- Triggers the onGameOver callback if one is set.
 --------------------------------------------------
 function GameManager:endGame()
+    if self.gameOver then return end  -- Prevent multiple calls.
+    self.gameOver = true
+
     print("Game Over!")
     
-    -- Determine the winner based on tower health or other conditions
     local winner = nil
-    
-    -- If there are towers, check which one is destroyed
-    if self.player1.tower and self.player2.tower then
-        if self.player1.tower.hp <= 0 then
-            winner = self.player2
-        elseif self.player2.tower.hp <= 0 then
-            winner = self.player1
-        end
-    end
-    
-    -- If no towers, maybe check player health instead
-    if not winner then
-        if self.player1.health <= 0 then
-            winner = self.player2
-        elseif self.player2.health <= 0 then
-            winner = self.player1
-        end
+    if not self.player1.tower and not self.player2.tower then
+        winner = nil  -- Draw
+    elseif not self.player1.tower then
+        winner = self.player2
+    elseif not self.player2.tower then
+        winner = self.player1
     end
     
     if winner then
         print(winner.name .. " wins the match!")
     else
         print("The match ends in a draw.")
+    end
+
+    if self.onGameOver then
+        self.onGameOver(winner)
     end
 end
 

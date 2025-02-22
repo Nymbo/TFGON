@@ -132,9 +132,7 @@ function InputSystem.mousepressed(gameplay, x, y, button, istouch, presses)
             end
             if cellY == validSpawnRow then
                 local success = gm:summonMinion(pending.player, pending.card, pending.cardIndex, cellX, cellY)
-                if success then
-                    pending.player.manaCrystals = pending.player.manaCrystals - pending.card.cost
-                end
+                -- Removed duplicate mana cost subtraction here.
                 gameplay.pendingSummon = nil
                 return
             else
