@@ -1,5 +1,6 @@
 -- game/scenes/mainmenu.lua
 -- A polished main menu scene with consistent button styling
+-- Now with horizontally arranged buttons positioned higher on the screen
 
 local MainMenu = {}
 MainMenu.__index = MainMenu
@@ -66,13 +67,16 @@ function MainMenu:new(changeSceneCallback)
     self.screenHeight = love.graphics.getHeight()
     
     -- Button dimensions
-    self.buttonWidth = Theme.dimensions.buttonWidth * 1.5  -- Slightly wider buttons
+    self.buttonWidth = Theme.dimensions.buttonWidth * 1.2  -- Slightly wider buttons
     self.buttonHeight = Theme.dimensions.buttonHeight
     self.buttonSpacing = 20  -- Space between buttons
     
-    -- Calculate total menu height for centering
-    self.menuHeight = #self.menuOptions * (self.buttonHeight + self.buttonSpacing) - self.buttonSpacing
-    self.menuStartY = (self.screenHeight - self.menuHeight) / 2
+    -- Calculate total menu width for horizontal centering
+    self.menuWidth = #self.menuOptions * (self.buttonWidth + self.buttonSpacing) - self.buttonSpacing
+    
+    -- Position buttons higher on the screen (10% from the top instead of middle)
+    self.menuStartY = self.screenHeight * 0.1
+    self.menuStartX = (self.screenWidth - self.menuWidth) / 2
     
     -- Initialize hover states for all buttons
     self.buttonHovered = {}
@@ -100,10 +104,10 @@ end
 --------------------------------------------------
 function MainMenu:update(dt)
     local mx, my = love.mouse.getPosition()
-    local buttonX = (self.screenWidth - self.buttonWidth) / 2
     
     for i = 1, #self.menuOptions do
-        local buttonY = self.menuStartY + (i-1) * (self.buttonHeight + self.buttonSpacing)
+        local buttonX = self.menuStartX + (i-1) * (self.buttonWidth + self.buttonSpacing)
+        local buttonY = self.menuStartY
         self.buttonHovered[i] = mx >= buttonX and mx <= buttonX + self.buttonWidth and
                                my >= buttonY and my <= buttonY + self.buttonHeight
     end
@@ -116,11 +120,11 @@ function MainMenu:draw()
     -- Draw background
     self:drawScaledBackground()
     
-    -- Draw buttons
-    local buttonX = (self.screenWidth - self.buttonWidth) / 2
-    
+    -- Draw buttons in a horizontal line
     for i, option in ipairs(self.menuOptions) do
-        local buttonY = self.menuStartY + (i-1) * (self.buttonHeight + self.buttonSpacing)
+        local buttonX = self.menuStartX + (i-1) * (self.buttonWidth + self.buttonSpacing)
+        local buttonY = self.menuStartY
+        
         self:drawThemedButton(
             option,
             buttonX,
@@ -138,10 +142,10 @@ end
 function MainMenu:mousepressed(x, y, button, istouch, presses)
     if button ~= 1 then return end
     
-    local buttonX = (self.screenWidth - self.buttonWidth) / 2
-    
     for i, option in ipairs(self.menuOptions) do
-        local buttonY = self.menuStartY + (i-1) * (self.buttonHeight + self.buttonSpacing)
+        local buttonX = self.menuStartX + (i-1) * (self.buttonWidth + self.buttonSpacing)
+        local buttonY = self.menuStartY
+        
         if x >= buttonX and x <= buttonX + self.buttonWidth and
            y >= buttonY and y <= buttonY + self.buttonHeight then
             self:activateMenuOption(i)
@@ -170,9 +174,9 @@ end
 -- keypressed: Handle keyboard navigation
 --------------------------------------------------
 function MainMenu:keypressed(key)
-    if key == "up" then
+    if key == "left" then
         self.selectedIndex = ((self.selectedIndex - 2) % #self.menuOptions) + 1
-    elseif key == "down" then
+    elseif key == "right" then
         self.selectedIndex = (self.selectedIndex % #self.menuOptions) + 1
     elseif key == "return" or key == "space" then
         self:activateMenuOption(self.selectedIndex)
