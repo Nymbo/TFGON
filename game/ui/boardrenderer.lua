@@ -1,8 +1,9 @@
 -- game/ui/boardrenderer.lua
--- Renders the grid-based board with variable dimensions
+-- Renders the grid-based board with variable dimensions and tooltips
 
 local BoardRenderer = {}
 local Theme = require("game.ui.theme")
+local Tooltip = require("game.ui.tooltip")
 
 local TILE_SIZE = 100
 local boardX = 0  -- Will be calculated based on board size
@@ -17,6 +18,17 @@ local PAD_Y = 14
 
 -- Load the attack pattern overlay image
 local attackPattern = love.graphics.newImage("assets/images/pattern_diagonal_red_small.png")
+
+-- Track the currently hovered minion
+local hoveredMinion = nil
+
+--------------------------------------------------
+-- Helper function to check if a point is within a tile
+--------------------------------------------------
+local function isPointInTile(x, y, tileX, tileY)
+    return x >= tileX and x < tileX + TILE_SIZE and
+           y >= tileY and y < tileY + TILE_SIZE
+end
 
 --------------------------------------------------
 -- Helper: Get the reach of a minion based on its archetype
@@ -129,21 +141,68 @@ local function drawMinion(minion, cellX, cellY, currentPlayer, selectedMinion)
        minion.owner ~= currentPlayer and
        isInAttackRange(selectedMinion, minion) then
         
-        -- Set drawing mode to allow semi-transparency
         love.graphics.setBlendMode("alpha", "alphamultiply")
-        
-        -- Draw the pattern
         love.graphics.setColor(1, 1, 1, 0.7)
         
-        -- Create a repeating pattern using the image
         local patternW, patternH = attackPattern:getDimensions()
         local scaleX = TILE_SIZE / patternW
         local scaleY = TILE_SIZE / patternH
         
         love.graphics.draw(attackPattern, x, y, 0, scaleX, scaleY)
-        
-        -- Reset blend mode
         love.graphics.setBlendMode("alpha")
+    end
+end
+
+--------------------------------------------------
+-- drawTower: Renders a tower in its grid cell
+--------------------------------------------------
+local function drawTower(tower, currentPlayer)
+    local x = boardX + (tower.position.x - 1) * TILE_SIZE
+    local y = boardY + (tower.position.y - 1) * TILE_SIZE
+
+    -- Draw the tower image
+    love.graphics.setColor(1, 1, 1, 1)
+    local scale = TILE_SIZE / tower.image:getWidth()
+    love.graphics.draw(tower.image, x, y, 0, scale, scale)
+
+    -- Draw tower health
+    love.graphics.setFont(boardFonts.cardName)
+    love.graphics.setColor(Theme.colors.textPrimary)
+    love.graphics.printf(
+        tostring(tower.hp),
+        x,
+        y + (TILE_SIZE - boardFonts.cardName:getHeight()) / 2,
+        TILE_SIZE,
+        "center"
+    )
+end
+
+--------------------------------------------------
+-- drawMoveRange: Shows valid movement tiles for selected minion
+--------------------------------------------------
+local function drawMoveRange(board, selectedMinion, gameManager)
+    if not selectedMinion or selectedMinion.summoningSickness or 
+       selectedMinion.hasMoved or not selectedMinion.position then
+        return
+    end
+
+    local sx = selectedMinion.position.x
+    local sy = selectedMinion.position.y
+    local moveRange = selectedMinion.movement or 1
+
+    for y = 1, board.rows do
+        for x = 1, board.cols do
+            local dist = math.max(math.abs(x - sx), math.abs(y - sy))
+            if dist <= moveRange and board:isEmpty(x, y) and 
+               not gameManager:isTileOccupiedByTower(x, y) then
+                local tileX = boardX + (x - 1) * TILE_SIZE
+                local tileY = boardY + (y - 1) * TILE_SIZE
+                love.graphics.setColor(Theme.colors.accentBlue)
+                love.graphics.setLineWidth(3)
+                love.graphics.rectangle("line", tileX, tileY, TILE_SIZE, TILE_SIZE)
+                love.graphics.setLineWidth(1)
+            end
+        end
     end
 end
 
@@ -160,19 +219,39 @@ function BoardRenderer.drawBoard(board, player1, player2, selectedMinion, curren
     -- Center the board horizontally
     boardX = (love.graphics.getWidth() - boardWidth) / 2
 
+    -- Update hoveredMinion based on mouse position
+    local mx, my = love.mouse.getPosition()
+    hoveredMinion = nil
+    
+    -- Only check for hover if mouse is within board bounds
+    if mx >= boardX and mx < boardX + boardWidth and
+       my >= boardY and my < boardY + boardHeight then
+        local cellX = math.floor((mx - boardX) / TILE_SIZE) + 1
+        local cellY = math.floor((my - boardY) / TILE_SIZE) + 1
+        
+        if cellX >= 1 and cellX <= board.cols and
+           cellY >= 1 and cellY <= board.rows then
+            hoveredMinion = board:getMinionAt(cellX, cellY)
+        end
+    end
+
+    -- Draw the board grid and spawn zones
     for y = 1, board.rows do
         for x = 1, board.cols do
             local cellX = boardX + (x - 1) * TILE_SIZE
             local cellY = boardY + (y - 1) * TILE_SIZE
 
+            -- Draw spawn zones
             if y == 1 or y == board.rows then
                 love.graphics.setColor(Theme.colors.spawnZone)
                 love.graphics.rectangle("fill", cellX, cellY, TILE_SIZE, TILE_SIZE)
             end
 
+            -- Draw grid lines
             love.graphics.setColor(Theme.colors.gridLine)
             love.graphics.rectangle("line", cellX, cellY, TILE_SIZE, TILE_SIZE)
 
+            -- Draw cell coordinates
             local colLetter = string.char(64 + x)
             local cellLabel = colLetter .. tostring(y)
             love.graphics.setFont(boardFonts.cardType)
@@ -182,55 +261,23 @@ function BoardRenderer.drawBoard(board, player1, player2, selectedMinion, curren
         end
     end
 
-    if selectedMinion and selectedMinion.owner == currentPlayer and not selectedMinion.summoningSickness and not selectedMinion.hasMoved and selectedMinion.position then
-        local sx = selectedMinion.position.x
-        local sy = selectedMinion.position.y
-        local moveRange = selectedMinion.movement or 1
-        for yy = 1, board.rows do
-            for xx = 1, board.cols do
-                local dist = math.max(math.abs(xx - sx), math.abs(yy - sy))
-                if dist <= moveRange and board:isEmpty(xx, yy) and not gameManager:isTileOccupiedByTower(xx, yy) then
-                    local tileX = boardX + (xx - 1) * TILE_SIZE
-                    local tileY = boardY + (yy - 1) * TILE_SIZE
-                    love.graphics.setColor(Theme.colors.accentBlue)
-                    love.graphics.setLineWidth(3)
-                    love.graphics.rectangle("line", tileX, tileY, TILE_SIZE, TILE_SIZE)
-                    love.graphics.setLineWidth(1)
-                end
-            end
-        end
-    end
+    -- Draw movement range for selected minion
+    drawMoveRange(board, selectedMinion, gameManager)
 
+    -- Draw all minions
     board:forEachMinion(function(minion, x, y)
         drawMinion(minion, x, y, currentPlayer, selectedMinion)
     end)
 
-    -- Draw tower for player 1 if it exists
+    -- Draw towers
     if player1.tower then
-        local tower = player1.tower
-        local towerX = boardX + (tower.position.x - 1) * TILE_SIZE
-        local towerY = boardY + (tower.position.y - 1) * TILE_SIZE
-        love.graphics.setColor(1, 1, 1, 1)
-        local scale = TILE_SIZE / tower.image:getWidth()
-        love.graphics.draw(tower.image, towerX, towerY, 0, scale, scale)
-        love.graphics.setFont(boardFonts.cardName)
-        love.graphics.setColor(Theme.colors.textPrimary)
-        love.graphics.printf(tostring(tower.hp), towerX, towerY + (TILE_SIZE - boardFonts.cardName:getHeight()) / 2, TILE_SIZE, "center")
+        drawTower(player1.tower, currentPlayer)
     end
-    
-    -- Draw tower for player 2 if it exists
     if player2.tower then
-        local tower = player2.tower
-        local towerX = boardX + (tower.position.x - 1) * TILE_SIZE
-        local towerY = boardY + (tower.position.y - 1) * TILE_SIZE
-        love.graphics.setColor(1, 1, 1, 1)
-        local scale = TILE_SIZE / tower.image:getWidth()
-        love.graphics.draw(tower.image, towerX, towerY, 0, scale, scale)
-        love.graphics.setFont(boardFonts.cardName)
-        love.graphics.setColor(Theme.colors.textPrimary)
-        love.graphics.printf(tostring(tower.hp), towerX, towerY + (TILE_SIZE - boardFonts.cardName:getHeight()) / 2, TILE_SIZE, "center")
+        drawTower(player2.tower, currentPlayer)
     end
 
+    -- Draw selection outline for selected minion
     if selectedMinion and selectedMinion.position then
         local sx = boardX + (selectedMinion.position.x - 1) * TILE_SIZE
         local sy = boardY + (selectedMinion.position.y - 1) * TILE_SIZE
@@ -240,15 +287,21 @@ function BoardRenderer.drawBoard(board, player1, player2, selectedMinion, curren
         love.graphics.setLineWidth(1)
     end
 
+    -- Update and draw tooltip
+    Tooltip.update(love.timer.getDelta(), mx, my, hoveredMinion)
+    Tooltip.draw()
+
+    -- Reset color
     love.graphics.setColor(1, 1, 1, 1)
 end
 
--- Return the current boardX and boardY values for other systems
+--------------------------------------------------
+-- Utility functions to get board position and tile size
+--------------------------------------------------
 function BoardRenderer.getBoardPosition()
     return boardX, boardY
 end
 
--- Return the tile size for calculations
 function BoardRenderer.getTileSize()
     return TILE_SIZE
 end
