@@ -4,12 +4,14 @@
 -- Also accepts a selected board configuration.
 -- Displays a banner (banner image plus text) at the start of each turn.
 -- The banner is now positioned so its center aligns with the center of the board.
+-- Updated to include AI opponent functionality
 
 local GameManager = require("game.managers.gamemanager")
 local DrawSystem = require("game.scenes.gameplay.draw")
 local InputSystem = require("game.scenes.gameplay.input")
 local CombatSystem = require("game.scenes.gameplay.combat")
 local BoardRenderer = require("game.ui.boardrenderer")
+local AIManager = require("game.managers.aimanager") -- New AI Manager import
 
 local Gameplay = {}
 Gameplay.__index = Gameplay
@@ -18,10 +20,9 @@ Gameplay.__index = Gameplay
 -- Constructor for Gameplay scene.
 -- 'selectedDeck' is passed in from Deck Selection.
 -- 'selectedBoard' is passed in from Deck Selection.
--- We load the banner images and set up a callback to display them
--- for a brief duration (bannerTimer).
+-- Added 'aiOpponent' parameter to enable AI opponent.
 --------------------------------------------------
-function Gameplay:new(changeSceneCallback, selectedDeck, selectedBoard)
+function Gameplay:new(changeSceneCallback, selectedDeck, selectedBoard, aiOpponent)
     local self = setmetatable({}, Gameplay)
     
     -- Pass the selectedDeck and selectedBoard to GameManager for player 1.
@@ -30,6 +31,12 @@ function Gameplay:new(changeSceneCallback, selectedDeck, selectedBoard)
     
     -- Store the selected board config
     self.selectedBoard = selectedBoard
+
+    -- Initialize AI opponent if enabled
+    self.aiOpponent = aiOpponent or false
+    if self.aiOpponent then
+        self.aiManager = AIManager:new(self.gameManager)
+    end
 
     -- Background image - use board-specific image if provided
     if selectedBoard and selectedBoard.imagePath and love.filesystem.getInfo(selectedBoard.imagePath) then
@@ -64,10 +71,15 @@ function Gameplay:new(changeSceneCallback, selectedDeck, selectedBoard)
             self.bannerText = "YOUR TURN"
         else
             self.bannerImage = self.redRibbon
-            self.bannerText = "OPPONENT'S TURN"
+            local bannerMsg = self.aiOpponent and "AI OPPONENT'S TURN" or "OPPONENT'S TURN"
+            self.bannerText = bannerMsg
         end
         self.bannerTimer = self.bannerDuration
     end
+
+    -- Initialize AI turn timer
+    self.aiTurnTimer = 0
+    self.aiTurnDelay = 0.5  -- Delay before AI starts its turn
 
     return self
 end
@@ -75,6 +87,7 @@ end
 --------------------------------------------------
 -- update: Update game logic, end turn hover,
 -- and decrement banner timer if active.
+-- Now also handles AI turns.
 --------------------------------------------------
 function Gameplay:update(dt)
     self.gameManager:update(dt)
@@ -84,6 +97,19 @@ function Gameplay:update(dt)
         self.bannerTimer = self.bannerTimer - dt
         if self.bannerTimer < 0 then
             self.bannerTimer = 0
+        end
+    end
+
+    -- Handle AI turns
+    if self.aiOpponent and self.gameManager.currentPlayer == 2 then
+        -- Add a small delay before the AI takes its turn
+        self.aiTurnTimer = self.aiTurnTimer - dt
+        if self.aiTurnTimer <= 0 then
+            -- Reset the timer for next AI turn
+            self.aiTurnTimer = self.aiTurnDelay
+            
+            -- Execute AI turn
+            self.aiManager:takeTurn()
         end
     end
 end
@@ -150,9 +176,27 @@ end
 
 --------------------------------------------------
 -- mousepressed: Delegate to input system.
+-- Updated to handle AI opponent.
 --------------------------------------------------
 function Gameplay:mousepressed(x, y, button, istouch, presses)
+    -- Don't allow user input during AI's turn
+    if self.aiOpponent and self.gameManager.currentPlayer == 2 then
+        return
+    end
+    
     InputSystem.mousepressed(self, x, y, button, istouch, presses)
+end
+
+--------------------------------------------------
+-- endTurn: Custom end turn function that handles the AI turn timer
+--------------------------------------------------
+function Gameplay:endTurn()
+    self.gameManager:endTurn()
+    
+    -- If it's now the AI's turn, set the AI turn timer
+    if self.aiOpponent and self.gameManager.currentPlayer == 2 then
+        self.aiTurnTimer = self.aiTurnDelay
+    end
 end
 
 --------------------------------------------------

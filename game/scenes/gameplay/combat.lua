@@ -1,5 +1,5 @@
 -- game/scenes/gameplay/combat.lua
--- This module handles grid-based combat between minions and includes tower attacks.
+-- The CombatSystem module now modified to better handle attacks from the AI manager
 -- It has been updated to support the new combat rules where ranged/magic minions
 -- only take counter damage if they are within the target's attack range.
 
@@ -33,9 +33,19 @@ end
 --------------------------------------------------
 -- CombatSystem.resolveAttack:
 -- Resolves an attack initiated by a minion or hero.
+-- Now supports direct gameManager parameter for AI usage.
 --------------------------------------------------
-function CombatSystem.resolveAttack(gameplay, attackerInfo, targetInfo)
-    local gm = gameplay.gameManager
+function CombatSystem.resolveAttack(gameplayOrManager, attackerInfo, targetInfo)
+    -- Support both gameplay scene or direct game manager
+    local gm
+    if gameplayOrManager.gameManager then
+        -- It's a gameplay scene
+        gm = gameplayOrManager.gameManager
+    else
+        -- It's already a game manager
+        gm = gameplayOrManager
+    end
+    
     local currentPlayer = gm:getCurrentPlayer()
 
     if attackerInfo.type == "minion" then
@@ -143,7 +153,7 @@ function CombatSystem.resolveAttack(gameplay, attackerInfo, targetInfo)
 
     -- End the game if the enemy tower's health drops to zero or below.
     local enemy = gm:getEnemyPlayer(currentPlayer)
-    if enemy.tower.hp <= 0 then
+    if enemy.tower and enemy.tower.hp <= 0 then
         gm:endGame()
     end
 end

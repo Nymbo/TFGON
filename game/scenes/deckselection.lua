@@ -1,5 +1,6 @@
 -- game/scenes/deckselection.lua
 -- Deck selection scene with unified Theme styling and board selection
+-- Now with AI opponent option
 
 local DeckSelection = {}
 DeckSelection.__index = DeckSelection
@@ -23,6 +24,9 @@ function DeckSelection:new(changeSceneCallback)
     -- Initialize board selection
     self.selectedBoardIndex = 1
     self.boards = BoardRegistry.boards
+
+    -- Add AI opponent option
+    self.aiOpponent = true  -- Default to enabled
 
     -- Load background image
     self.background = love.graphics.newImage("assets/images/mainmenu_background.png")
@@ -61,6 +65,13 @@ function DeckSelection:update(dt)
     -- Update hover states for buttons
     self.playHovered = self:isPointInButton(mx, my, "play")
     self.backHovered = self:isPointInButton(mx, my, "back")
+    
+    -- Update hover state for AI option
+    local checkboxX = self.panelX + 40
+    local checkboxY = self:getButtonY("play") - 40
+    local checkboxSize = 20
+    self.aiCheckboxHovered = mx >= checkboxX and mx <= checkboxX + checkboxSize and
+                            my >= checkboxY and my <= checkboxY + checkboxSize
     
     -- Update hover state for board selector
     self.boardHoveredIndex = nil
@@ -276,6 +287,36 @@ function DeckSelection:draw()
         love.graphics.print(str, itemX - textWidth/2, itemY - textHeight/2)
     end
     
+    -- Draw AI opponent checkbox
+    local checkboxX = self.panelX + 40
+    local checkboxY = self:getButtonY("play") - 40
+    local checkboxSize = 20
+    
+    -- Checkbox outline (with glow when hovered)
+    if self.aiCheckboxHovered then
+        love.graphics.setColor(Theme.colors.buttonGlowHover)
+        love.graphics.rectangle("fill", 
+            checkboxX - 2, 
+            checkboxY - 2, 
+            checkboxSize + 4, 
+            checkboxSize + 4, 
+            3)
+    end
+    
+    love.graphics.setColor(Theme.colors.buttonBorder)
+    love.graphics.rectangle("line", checkboxX, checkboxY, checkboxSize, checkboxSize, 3)
+    
+    -- Checkbox fill if selected
+    if self.aiOpponent then
+        love.graphics.setColor(Theme.colors.buttonBorder)
+        love.graphics.rectangle("fill", checkboxX + 3, checkboxY + 3, checkboxSize - 6, checkboxSize - 6, 2)
+    end
+    
+    -- Checkbox label
+    love.graphics.setFont(Theme.fonts.body)
+    love.graphics.setColor(Theme.colors.textPrimary)
+    love.graphics.print("Play against AI", checkboxX + checkboxSize + 10, checkboxY + (checkboxSize - Theme.fonts.body:getHeight()) / 2)
+    
     -- Draw buttons
     local buttonX = (self.screenWidth - self.buttonWidth) / 2
     
@@ -317,6 +358,17 @@ end
 function DeckSelection:mousepressed(x, y, button, istouch, presses)
     if button ~= 1 then return end
 
+    -- Check AI checkbox click
+    local checkboxX = self.panelX + 40
+    local checkboxY = self:getButtonY("play") - 40
+    local checkboxSize = 20
+    
+    if x >= checkboxX and x <= checkboxX + checkboxSize and
+       y >= checkboxY and y <= checkboxY + checkboxSize then
+        self.aiOpponent = not self.aiOpponent
+        return
+    end
+
     -- Check deck slot clicks
     local slotHeight = 50
     local slotSpacing = 10
@@ -348,7 +400,7 @@ function DeckSelection:mousepressed(x, y, button, istouch, presses)
 
     -- Check button clicks
     if self:isPointInButton(x, y, "play") then
-        self.changeSceneCallback("gameplay", self.decks[self.selectedDeckIndex], self.boards[self.selectedBoardIndex])
+        self.changeSceneCallback("gameplay", self.decks[self.selectedDeckIndex], self.boards[self.selectedBoardIndex], self.aiOpponent)
     elseif self:isPointInButton(x, y, "back") then
         self.changeSceneCallback("mainmenu")
     end
@@ -368,9 +420,11 @@ function DeckSelection:keypressed(key)
         self.selectedBoardIndex = (self.selectedBoardIndex - 2) % #self.boards + 1
     elseif key == "right" then
         self.selectedBoardIndex = self.selectedBoardIndex % #self.boards + 1
-    elseif key == "return" or key == "space" then
+    elseif key == "space" then
+        self.aiOpponent = not self.aiOpponent
+    elseif key == "return" then
         if self.selectedDeckIndex > 0 then
-            self.changeSceneCallback("gameplay", self.decks[self.selectedDeckIndex], self.boards[self.selectedBoardIndex])
+            self.changeSceneCallback("gameplay", self.decks[self.selectedDeckIndex], self.boards[self.selectedBoardIndex], self.aiOpponent)
         end
     end
 end
