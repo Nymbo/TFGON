@@ -1,5 +1,6 @@
 -- game/scenes/settings.lua
 -- Settings scene with unified Theme styling and matching layout
+-- Now with AI difficulty settings
 local Settings = {}
 Settings.__index = Settings
 
@@ -27,16 +28,46 @@ function Settings:new(changeSceneCallback)
 
     -- Slider settings
     self.sliderX = self.panelX + 100
-    self.sliderY = self.panelY + self.panelHeight * 0.4
+    self.sliderY = self.panelY + self.panelHeight * 0.3
     self.sliderWidth = self.panelWidth - 200
     self.sliderValue = love.audio.getVolume() or 1
     self.dragging = false
 
+    -- AI Difficulty settings
+    self.difficulties = {"Easy", "Normal", "Hard"}
+    
+    -- Load saved difficulty or default to Normal
+    self.selectedDifficulty = self:loadDifficultySetting() or 2  -- Index 2 is "Normal"
+    
     -- Button dimensions from Theme
     self.buttonWidth = Theme.dimensions.buttonWidth * 1.5
     self.buttonHeight = Theme.dimensions.buttonHeight
+    
+    -- Tracking hover states
+    self.difficultyButtonsHovered = {false, false, false}
 
     return self
+end
+
+--------------------------------------------------
+-- Helper: Load difficulty setting from file
+--------------------------------------------------
+function Settings:loadDifficultySetting()
+    if love.filesystem.getInfo("difficulty.txt") then
+        local content = love.filesystem.read("difficulty.txt")
+        local difficulty = tonumber(content)
+        if difficulty and difficulty >= 1 and difficulty <= 3 then
+            return difficulty
+        end
+    end
+    return 2  -- Default to Normal if no valid setting found
+end
+
+--------------------------------------------------
+-- Helper: Save difficulty setting to file
+--------------------------------------------------
+function Settings:saveDifficultySetting()
+    love.filesystem.write("difficulty.txt", tostring(self.selectedDifficulty))
 end
 
 --------------------------------------------------
@@ -56,7 +87,7 @@ end
 --------------------------------------------------
 -- Helper: Draw themed button
 --------------------------------------------------
-function Settings:drawThemedButton(text, x, y, width, height, isHovered)
+function Settings:drawThemedButton(text, x, y, width, height, isHovered, isSelected)
     -- Shadow
     love.graphics.setColor(Theme.colors.buttonShadow)
     love.graphics.rectangle(
@@ -81,10 +112,21 @@ function Settings:drawThemedButton(text, x, y, width, height, isHovered)
         )
     end
 
-    -- Base and gradient
-    love.graphics.setColor(Theme.colors.buttonBase)
+    -- Base and gradient (special color for selected buttons)
+    if isSelected then
+        love.graphics.setColor(Theme.colors.buttonHover)
+    else
+        love.graphics.setColor(Theme.colors.buttonBase)
+    end
+    
     love.graphics.rectangle("fill", x, y, width, height, Theme.dimensions.buttonCornerRadius)
-    love.graphics.setColor(Theme.colors.buttonGradientTop)
+    
+    if isSelected then
+        love.graphics.setColor(Theme.colors.buttonGlowHover)
+    else
+        love.graphics.setColor(Theme.colors.buttonGradientTop)
+    end
+    
     love.graphics.rectangle("fill", x + 2, y + 2, width - 4, height/2 - 2, Theme.dimensions.buttonCornerRadius)
 
     -- Border
@@ -112,11 +154,24 @@ function Settings:update(dt)
         love.audio.setVolume(self.sliderValue)
     end
 
-    -- Update button hover state
+    -- Update button hover states
     local buttonX = (self.screenWidth - self.buttonWidth) / 2
-    local buttonY = self.panelY + self.panelHeight - self.buttonHeight - 40
+    local backY = self.panelY + self.panelHeight - self.buttonHeight - 40
     self.backHovered = mx >= buttonX and mx <= buttonX + self.buttonWidth and
-                      my >= buttonY and my <= buttonY + self.buttonHeight
+                      my >= backY and my <= backY + self.buttonHeight
+                      
+    -- Update difficulty button hover states
+    local difficultyWidth = self.buttonWidth * 0.6
+    local difficultySpacing = 20
+    local totalWidth = (#self.difficulties * difficultyWidth) + ((#self.difficulties - 1) * difficultySpacing)
+    local startX = (self.screenWidth - totalWidth) / 2
+    local difficultyY = self.sliderY + 120
+    
+    for i = 1, #self.difficulties do
+        local btnX = startX + (i-1) * (difficultyWidth + difficultySpacing)
+        self.difficultyButtonsHovered[i] = mx >= btnX and mx <= btnX + difficultyWidth and
+                                           my >= difficultyY and my <= difficultyY + self.buttonHeight
+    end
 end
 
 --------------------------------------------------
@@ -206,11 +261,62 @@ function Settings:draw()
         knobY - Theme.dimensions.sliderKnobRadius / 2,
         Theme.dimensions.sliderKnobRadius / 4
     )
+    
+    -- AI Difficulty section
+    love.graphics.setFont(Theme.fonts.subtitle)
+    love.graphics.setColor(Theme.colors.textPrimary)
+    love.graphics.printf(
+        "AI Difficulty",
+        self.panelX,
+        self.sliderY + 60,
+        self.panelWidth,
+        "center"
+    )
+    
+    -- Draw difficulty buttons
+    local difficultyWidth = self.buttonWidth * 0.6
+    local difficultySpacing = 20
+    local totalWidth = (#self.difficulties * difficultyWidth) + ((#self.difficulties - 1) * difficultySpacing)
+    local startX = (self.screenWidth - totalWidth) / 2
+    local difficultyY = self.sliderY + 120
+    
+    for i = 1, #self.difficulties do
+        local btnX = startX + (i-1) * (difficultyWidth + difficultySpacing)
+        local isSelected = (i == self.selectedDifficulty)
+        
+        self:drawThemedButton(
+            self.difficulties[i],
+            btnX,
+            difficultyY,
+            difficultyWidth,
+            self.buttonHeight,
+            self.difficultyButtonsHovered[i],
+            isSelected
+        )
+    end
+    
+    -- Difficulty description
+    love.graphics.setFont(Theme.fonts.body)
+    love.graphics.setColor(Theme.colors.textSecondary)
+    
+    local difficultyDescriptions = {
+        "The AI will make basic moves and avoid complex strategies.",
+        "The AI will play with balanced strategy and tactical decisions.",
+        "The AI will aggressively target your tower and make optimal plays."
+    }
+    
+    love.graphics.printf(
+        difficultyDescriptions[self.selectedDifficulty],
+        self.panelX + 50,
+        difficultyY + self.buttonHeight + 20,
+        self.panelWidth - 100,
+        "center"
+    )
 
     -- Back button
     local buttonX = (self.screenWidth - self.buttonWidth) / 2
-    local buttonY = self.panelY + self.panelHeight - self.buttonHeight - 40
-    self:drawThemedButton("Back", buttonX, buttonY, self.buttonWidth, self.buttonHeight, self.backHovered)
+    local backY = self.panelY + self.panelHeight - self.buttonHeight - 40
+    self:drawThemedButton("Back", buttonX, backY, self.buttonWidth, self.buttonHeight, self.backHovered)
 end
 
 --------------------------------------------------
@@ -233,12 +339,30 @@ function Settings:mousepressed(x, y, button, istouch, presses)
         love.audio.setVolume(self.sliderValue)
         return
     end
+    
+    -- Check for difficulty button clicks
+    local difficultyWidth = self.buttonWidth * 0.6
+    local difficultySpacing = 20
+    local totalWidth = (#self.difficulties * difficultyWidth) + ((#self.difficulties - 1) * difficultySpacing)
+    local startX = (self.screenWidth - totalWidth) / 2
+    local difficultyY = self.sliderY + 120
+    
+    for i = 1, #self.difficulties do
+        local btnX = startX + (i-1) * (difficultyWidth + difficultySpacing)
+        if x >= btnX and x <= btnX + difficultyWidth and
+           y >= difficultyY and y <= difficultyY + self.buttonHeight then
+            self.selectedDifficulty = i
+            self:saveDifficultySetting()
+            return
+        end
+    end
 
     -- Check for back button click
     local buttonX = (self.screenWidth - self.buttonWidth) / 2
-    local buttonY = self.panelY + self.panelHeight - self.buttonHeight - 40
+    local backY = self.panelY + self.panelHeight - self.buttonHeight - 40
     if x >= buttonX and x <= buttonX + self.buttonWidth and
-       y >= buttonY and y <= buttonY + self.buttonHeight then
+       y >= backY and y <= backY + self.buttonHeight then
+        self:saveDifficultySetting()
         self.changeSceneCallback("mainmenu")
     end
 end
@@ -257,7 +381,14 @@ end
 --------------------------------------------------
 function Settings:keypressed(key)
     if key == "escape" then
+        self:saveDifficultySetting()
         self.changeSceneCallback("mainmenu")
+    elseif key == "left" then
+        self.selectedDifficulty = math.max(1, self.selectedDifficulty - 1)
+        self:saveDifficultySetting()
+    elseif key == "right" then
+        self.selectedDifficulty = math.min(#self.difficulties, self.selectedDifficulty + 1)
+        self:saveDifficultySetting()
     end
 end
 

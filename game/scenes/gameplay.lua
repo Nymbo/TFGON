@@ -25,8 +25,8 @@ Gameplay.__index = Gameplay
 function Gameplay:new(changeSceneCallback, selectedDeck, selectedBoard, aiOpponent)
     local self = setmetatable({}, Gameplay)
     
-    -- Pass the selectedDeck, selectedBoard, and aiOpponent flag to GameManager
-    self.gameManager = GameManager:new(selectedDeck, selectedBoard, aiOpponent)
+    -- Pass the selectedDeck and selectedBoard to GameManager for player 1.
+    self.gameManager = GameManager:new(selectedDeck, selectedBoard)
     self.changeSceneCallback = changeSceneCallback
     
     -- Store the selected board config
@@ -36,6 +36,21 @@ function Gameplay:new(changeSceneCallback, selectedDeck, selectedBoard, aiOppone
     self.aiOpponent = aiOpponent or false
     if self.aiOpponent then
         self.aiManager = AIManager:new(self.gameManager)
+        
+        -- Load difficulty setting if available
+        if love.filesystem.getInfo("difficulty.txt") then
+            local content = love.filesystem.read("difficulty.txt")
+            local difficultyIndex = tonumber(content)
+            if difficultyIndex then
+                local difficultyMap = {
+                    [1] = "easy",
+                    [2] = "normal",
+                    [3] = "hard"
+                }
+                local difficulty = difficultyMap[difficultyIndex] or "normal"
+                self.aiManager:setDifficulty(difficulty)
+            end
+        end
     end
 
     -- Background image - use board-specific image if provided
