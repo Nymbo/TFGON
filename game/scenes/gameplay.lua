@@ -25,8 +25,8 @@ Gameplay.__index = Gameplay
 function Gameplay:new(changeSceneCallback, selectedDeck, selectedBoard, aiOpponent)
     local self = setmetatable({}, Gameplay)
     
-    -- Pass the selectedDeck and selectedBoard to GameManager for player 1.
-    self.gameManager = GameManager:new(selectedDeck, selectedBoard)
+    -- Pass the selectedDeck, selectedBoard, and aiOpponent flag to GameManager
+    self.gameManager = GameManager:new(selectedDeck, selectedBoard, aiOpponent)
     self.changeSceneCallback = changeSceneCallback
     
     -- Store the selected board config

@@ -1,5 +1,6 @@
 -- game/managers/gamemanager.lua
 -- Updated to accept a selected board configuration as well as deck
+-- Now also supports AI opponent with custom deck
 
 local Player = require("game.core.player")
 local Board = require("game.core.board")
@@ -14,14 +15,24 @@ GameManager.__index = GameManager
 -- Constructor for GameManager.
 -- 'selectedDeck' is used for player 1.
 -- 'selectedBoard' is the board configuration to use.
+-- 'isAIOpponent' determines if player 2 should use an AI deck.
 -- Added "self.onTurnStart = nil" for hooking into turn-start events.
 --------------------------------------------------
-function GameManager:new(selectedDeck, selectedBoard)
+function GameManager:new(selectedDeck, selectedBoard, isAIOpponent)
     local self = setmetatable({}, GameManager)
 
     -- Create players; assign custom deck to player 1 if provided.
     self.player1 = Player:new("Player 1", selectedDeck)
-    self.player2 = Player:new("Player 2")
+    
+    -- If AI opponent, set up the AI deck
+    if isAIOpponent then
+        local AIDeck = require("game.data.aidecks")
+        local cardsData = require("data.cards")
+        local aiDeck = AIDeck.normalDeck(cardsData)
+        self.player2 = Player:new("AI Opponent", aiDeck)
+    else
+        self.player2 = Player:new("Player 2")
+    end
     
     -- Create board from selected configuration or use default
     self.board = Board:new(selectedBoard)
