@@ -44,7 +44,8 @@ function DrawSystem.drawGameplayScene(gameplay)
         gm.player2,
         gameplay.selectedMinion,
         gm:getCurrentPlayer(),
-        gm
+        gm,
+        gameplay.pendingSummon
     )
 
     local currentPlayer = gm:getCurrentPlayer()
