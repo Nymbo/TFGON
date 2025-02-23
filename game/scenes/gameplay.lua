@@ -273,10 +273,12 @@ function Gameplay:drawGameOverPopup()
     local startX = popupX + (popupW - totalButtonsW) / 2
     local buttonY = popupY + popupH - buttonH - 40
 
+    local mx, my = love.mouse.getPosition()
     local buttons = {"Restart", "Main Menu"}
     for i, btnText in ipairs(buttons) do
         local btnX = startX + (i - 1) * (buttonW + spacing)
-        drawThemedButton(btnText, btnX, buttonY, buttonW, buttonH, false, false)
+        local isHovered = mx >= btnX and mx <= btnX + buttonW and my >= buttonY and my <= buttonY + buttonH
+        drawThemedButton(btnText, btnX, buttonY, buttonW, buttonH, isHovered, false)
         self.popupButtons[btnText] = {x = btnX, y = buttonY, width = buttonW, height = buttonH}
     end
 end

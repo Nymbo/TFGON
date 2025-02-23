@@ -135,7 +135,6 @@ function DrawSystem.drawGameplayScene(gameplay)
     love.graphics.setColor(END_TURN_BUTTON.colors.textPrimary)
     love.graphics.printf(currentTurnText, buttonX, turnIndicatorY, END_TURN_BUTTON.width, "center")
 
-    -- NEW: Draw Mana Frames for both players using "FrameRound.png"
     -- Ensure the mana frame image is loaded only once
     if not DrawSystem.manaFrame then
         DrawSystem.manaFrame = love.graphics.newImage("assets/images/FrameRound.png")
