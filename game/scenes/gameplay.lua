@@ -237,7 +237,7 @@ end
 -- drawGameOverPopup: Draws a modal popup overlay for game over.
 -- The popup uses Theme styling similar to the Settings menu.
 -- It has two buttons: "Restart" and "Main Menu".
--- The title displays "DEFEAT" if Player 1's tower is gone and "VICTORY" if Player 2's tower is gone.
+-- The title now always displays "GAME OVER".
 --------------------------------------------------
 function Gameplay:drawGameOverPopup()
     local screenW, screenH = love.graphics.getWidth(), love.graphics.getHeight()
@@ -257,15 +257,8 @@ function Gameplay:drawGameOverPopup()
     love.graphics.rectangle("line", popupX, popupY, popupW, popupH, 10)
     love.graphics.setLineWidth(1)
 
-    -- Determine title text based on the game over winner.
-    local gameOverTitle = ""
-    if self.gameOverWinner == self.gameManager.player2 then
-        gameOverTitle = "DEFEAT"
-    elseif self.gameOverWinner == self.gameManager.player1 then
-        gameOverTitle = "VICTORY"
-    else
-        gameOverTitle = "DRAW"
-    end
+    -- Always show "GAME OVER" as the title.
+    local gameOverTitle = "GAME OVER"
 
     -- Draw the title using Theme fonts.
     love.graphics.setFont(Theme.fonts.title)
