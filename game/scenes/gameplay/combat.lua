@@ -1,122 +1,91 @@
 -- game/scenes/gameplay/combat.lua
--- The CombatSystem module now modified to better handle attacks from the AI manager
--- It has been updated to support the new combat rules where ranged/magic minions
--- only take counter damage if they are within the target's attack range.
+-- Minor changes to handle tower arrays. We rely on the actual tower object
+-- passed in {type="tower", tower=<some tower>}.
 
 local CombatSystem = {}
 local EffectManager = require("game.managers.effectmanager")
 
---------------------------------------------------
--- Helper: Chebyshev distance between two positions
--- This calculates the maximum difference in x or y coordinates.
---------------------------------------------------
 local function chebyshevDistance(pos1, pos2)
     return math.max(math.abs(pos1.x - pos2.x), math.abs(pos1.y - pos2.y))
 end
 
---------------------------------------------------
--- Helper: Get reach based on archetype
--- Determines how far a minion can attack.
---------------------------------------------------
 local function getReach(archetype)
     if archetype == "Melee" then
-        return 1  -- Melee minions can only attack adjacent cells.
+        return 1
     elseif archetype == "Magic" then
-        return 2  -- Magic minions have moderate range.
+        return 2
     elseif archetype == "Ranged" then
-        return 3  -- Ranged minions can attack from further away.
-    else
-        return 1 -- default reach
+        return 3
     end
+    return 1
 end
 
---------------------------------------------------
--- CombatSystem.resolveAttack:
--- Resolves an attack initiated by a minion or hero.
--- Now supports direct gameManager parameter for AI usage.
---------------------------------------------------
 function CombatSystem.resolveAttack(gameplayOrManager, attackerInfo, targetInfo)
-    -- Support both gameplay scene or direct game manager
     local gm
     if gameplayOrManager.gameManager then
-        -- It's a gameplay scene
         gm = gameplayOrManager.gameManager
     else
-        -- It's already a game manager
         gm = gameplayOrManager
     end
-    
+
     local currentPlayer = gm:getCurrentPlayer()
 
     if attackerInfo.type == "minion" then
         local attacker = attackerInfo.minion
-        
+
         if targetInfo.type == "hero" then
-            -- For hero attacks, apply damage to the enemy hero.
             local enemy = gm:getEnemyPlayer(currentPlayer)
             enemy.health = enemy.health - attacker.attack
             attacker.canAttack = false
 
         elseif targetInfo.type == "minion" then
             local target = targetInfo.minion
-            
-            -- Calculate distance and reach for both attacker and target.
             local distance = chebyshevDistance(attacker.position, target.position)
             local attackerReach = getReach(attacker.archetype)
             local targetReach = getReach(target.archetype)
-            
-            -- Ensure the target is within the attacker's range.
             if distance > attackerReach then
                 print("Target is out of reach!")
                 return
             end
-
-            -- Attacker deals damage to the target.
             target.currentHealth = target.currentHealth - attacker.attack
             print(attacker.name .. " attacked " .. target.name .. " for " .. attacker.attack .. " damage!")
-            
-            -- Determine counter damage based on attacker type.
+
             if attacker.archetype == "Melee" then
-                -- Melee minions always take counter damage.
                 attacker.currentHealth = attacker.currentHealth - target.attack
                 print(target.name .. " counterattacked " .. attacker.name .. " for " .. target.attack .. " damage!")
-            elseif attacker.archetype == "Ranged" or attacker.archetype == "Magic" then
-                -- Ranged/Magic minions take counter damage only if within target's reach.
+            else
+                -- Ranged/Magic only take counter if within target's reach
                 if distance <= targetReach then
                     attacker.currentHealth = attacker.currentHealth - target.attack
                     print(target.name .. " counterattacked " .. attacker.name .. " for " .. target.attack .. " damage!")
                 else
-                    print(attacker.name .. " safely attacked " .. target.name .. " from a distance!")
+                    print(attacker.name .. " safely attacked from distance!")
                 end
             end
 
-            -- Check if target is defeated.
             if target.currentHealth <= 0 then
                 local tx, ty = target.position.x, target.position.y
-                EffectManager.triggerDeathrattle(target, gm, gm:getEnemyPlayer(currentPlayer))
+                EffectManager.triggerDeathrattle(target, gm, gm:getEnemyPlayer(attacker.owner))
                 gm.board:removeMinion(tx, ty)
                 print(target.name .. " has been defeated!")
             end
 
-            -- Check if attacker is defeated.
             if attacker.currentHealth <= 0 then
                 local ax, ay = attacker.position.x, attacker.position.y
-                EffectManager.triggerDeathrattle(attacker, gm, currentPlayer)
+                EffectManager.triggerDeathrattle(attacker, gm, attacker.owner)
                 gm.board:removeMinion(ax, ay)
                 print(attacker.name .. " has been defeated!")
             end
 
-            -- Mark the attacker as having attacked this turn.
             attacker.canAttack = false
 
         elseif targetInfo.type == "tower" then
-            local enemy = gm:getEnemyPlayer(currentPlayer)
-            local towerPos = enemy.tower.position
-            local distance = chebyshevDistance(attacker.position, towerPos)
+            local tower = targetInfo.tower
+            local distance = chebyshevDistance(attacker.position, tower.position)
             local attackerReach = getReach(attacker.archetype)
             if distance <= attackerReach then
-                enemy.tower.hp = enemy.tower.hp - attacker.attack
-                print(attacker.name .. " attacked the tower for " .. attacker.attack .. " damage!")
+                tower.hp = tower.hp - attacker.attack
+                print(attacker.name .. " attacked a tower for " .. attacker.attack .. " damage!")
                 attacker.canAttack = false
             else
                 print("Tower is out of attack range!")
@@ -136,12 +105,13 @@ function CombatSystem.resolveAttack(gameplayOrManager, attackerInfo, targetInfo)
                 target.currentHealth = target.currentHealth - weapon.attack
                 if target.currentHealth <= 0 then
                     local tx, ty = target.position.x, target.position.y
-                    EffectManager.triggerDeathrattle(target, gm, enemy)
+                    EffectManager.triggerDeathrattle(target, gm, gm:getEnemyPlayer(currentPlayer))
                     gm.board:removeMinion(tx, ty)
                 end
             elseif targetInfo.type == "tower" then
-                enemy.tower.hp = enemy.tower.hp - weapon.attack
-                print("Hero attacked the tower for " .. weapon.attack .. " damage!")
+                local tower = targetInfo.tower
+                tower.hp = tower.hp - weapon.attack
+                print("Hero attacked a tower for " .. weapon.attack .. " damage!")
             end
 
             weapon.durability = weapon.durability - 1
@@ -151,11 +121,9 @@ function CombatSystem.resolveAttack(gameplayOrManager, attackerInfo, targetInfo)
         end
     end
 
-    -- End the game if the enemy tower's health drops to zero or below.
     local enemy = gm:getEnemyPlayer(currentPlayer)
-    if enemy.tower and enemy.tower.hp <= 0 then
-        gm:endGame()
-    end
+    -- If that player has no towers left, endGame will trigger in gm:update() or can be forced here
+    -- We'll rely on gm:update() for the official check
 end
 
 return CombatSystem

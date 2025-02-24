@@ -1,4 +1,5 @@
 -- game/core/boardregistry.lua
+
 local BoardRegistry = {}
 
 -- Store board definitions
@@ -45,6 +46,29 @@ BoardRegistry.boards = {
         rows = 8,
         cols = 8,
         towerPositions = nil, -- No towers on this board
+        imagePath = "assets/images/open_field_board.png"
+    },
+
+    -- 
+    -- New entry: Quad Arena
+    -- 
+    {
+        name = "Quad Arena",
+        description = "8x8 grid where each player has two towers",
+        rows = 8,
+        cols = 8,
+        towerPositions = {
+            -- B7 => (2,7) and G7 => (7,7) for Player 1
+            -- B2 => (2,2) and G2 => (7,2) for Player 2
+            player1 = {
+                { x = 2, y = 7 },
+                { x = 7, y = 7 }
+            },
+            player2 = {
+                { x = 2, y = 2 },
+                { x = 7, y = 2 }
+            }
+        },
         imagePath = "assets/images/open_field_board.png"
     }
 }

@@ -1,15 +1,15 @@
 -- game/managers/gamemanager.lua
--- Updated to accept a selected board configuration as well as deck.
--- Now supports AI opponent with custom deck and improved win condition checking based solely on Towers.
--- When a tower reaches 0 HP, it is removed from the board.
--- When a player has no towers remaining, the game is over.
--- An onGameOver callback is provided so that the gameplay scene can display a popup.
+-- Updated to handle multiple towers per player.
+--   * player1.towers and player2.towers now each hold a list of towers.
+--   * The game ends when a player's towers list is empty.
+--   * isTileOccupiedByTower(x, y) returns the specific tower at that tile (if any).
+--   * Summoning minions logic remains the same.
 
 local Player = require("game.core.player")
 local Board = require("game.core.board")
 local EffectManager = require("game.managers.effectmanager")
 local Deck = require("game/core/deck")
-local Tower = require("game.core.tower")  -- Newly added Tower module
+local Tower = require("game.core.tower")  -- Tower module
 
 local GameManager = {}
 GameManager.__index = GameManager
@@ -26,7 +26,7 @@ function GameManager:new(selectedDeck, selectedBoard, isAIOpponent)
 
     -- Create players; assign custom deck to player 1 if provided.
     self.player1 = Player:new("Player 1", selectedDeck)
-    
+
     -- If AI opponent, set up the AI deck.
     if isAIOpponent then
         local AIDeck = require("game.data.aidecks")
@@ -36,7 +36,7 @@ function GameManager:new(selectedDeck, selectedBoard, isAIOpponent)
     else
         self.player2 = Player:new("Player 2")
     end
-    
+
     -- Create board from selected configuration or use default.
     self.board = Board:new(selectedBoard)
 
@@ -47,37 +47,53 @@ function GameManager:new(selectedDeck, selectedBoard, isAIOpponent)
 
     self.player1:drawCard(3)
     self.player2:drawCard(3)
-    
-    -- Initialize towers if the board has tower positions.
+
+    --------------------------------------------------
+    -- Multiple Towers Setup
+    -- Each player gets a towers table. If the config
+    -- has multiple tower positions, create them all.
+    --------------------------------------------------
+    self.player1.towers = {}
+    self.player2.towers = {}
+
     if selectedBoard and selectedBoard.towerPositions then
-        -- Player 1 tower.
+        -- Player 1 towers
         if selectedBoard.towerPositions.player1 then
-            self.player1.tower = Tower:new({
-                owner = self.player1,
-                position = selectedBoard.towerPositions.player1,
-                hp = 30,
-                imagePath = "assets/images/blue_tower.png"
-            })
+            -- If the board config is an array of positions, create a tower for each
+            if type(selectedBoard.towerPositions.player1) == "table" then
+                for _, tPos in ipairs(selectedBoard.towerPositions.player1) do
+                    local twr = Tower:new({
+                        owner = self.player1,
+                        position = tPos,
+                        hp = 30,
+                        imagePath = "assets/images/blue_tower.png"
+                    })
+                    table.insert(self.player1.towers, twr)
+                end
+            end
         end
-        
-        -- Player 2 tower.
+
+        -- Player 2 towers
         if selectedBoard.towerPositions.player2 then
-            self.player2.tower = Tower:new({
-                owner = self.player2,
-                position = selectedBoard.towerPositions.player2,
-                hp = 30,
-                imagePath = "assets/images/red_tower.png"
-            })
+            if type(selectedBoard.towerPositions.player2) == "table" then
+                for _, tPos in ipairs(selectedBoard.towerPositions.player2) do
+                    local twr = Tower:new({
+                        owner = self.player2,
+                        position = tPos,
+                        hp = 30,
+                        imagePath = "assets/images/red_tower.png"
+                    })
+                    table.insert(self.player2.towers, twr)
+                end
+            end
         end
     end
 
-    -- Callback that the Gameplay scene can set to display banners, etc.
+    -- Callback that the Gameplay scene can set
     self.onTurnStart = nil
-
-    -- Callback to be triggered when the game is over (for a popup menu, etc.)
+    -- Callback triggered when the game is over
     self.onGameOver = nil
-
-    -- Flag to indicate that the game is over so no further actions are processed.
+    -- Flag to indicate game is over
     self.gameOver = false
 
     return self
@@ -86,20 +102,29 @@ end
 --------------------------------------------------
 -- update(dt):
 -- Continuously checks the win condition.
--- If a tower's HP falls to 0, it is removed.
--- The game ends when a player has no tower.
+-- Removes towers that have 0 or less HP.
+-- The game ends if a player has no remaining towers.
 --------------------------------------------------
 function GameManager:update(dt)
     if not self.gameOver then
-        -- Remove towers that have 0 or less HP.
-        if self.player1.tower and self.player1.tower.hp <= 0 then
-            self.player1.tower = nil
+        -- Check all towers for player1
+        for i = #self.player1.towers, 1, -1 do
+            local t = self.player1.towers[i]
+            if t.hp <= 0 then
+                table.remove(self.player1.towers, i)
+            end
         end
-        if self.player2.tower and self.player2.tower.hp <= 0 then
-            self.player2.tower = nil
+
+        -- Check all towers for player2
+        for i = #self.player2.towers, 1, -1 do
+            local t = self.player2.towers[i]
+            if t.hp <= 0 then
+                table.remove(self.player2.towers, i)
+            end
         end
-        -- Game over if a player no longer has a tower.
-        if not self.player1.tower or not self.player2.tower then
+
+        -- If either player has no towers left, game ends
+        if #self.player1.towers == 0 or #self.player2.towers == 0 then
             self:endGame()
         end
     end
@@ -107,17 +132,11 @@ end
 
 --------------------------------------------------
 -- draw():
--- Displays current turn info and tower HP for debugging.
+-- Example debug: displays current turn info
+-- (Tower HP is now displayed via boardRenderer or scene)
 --------------------------------------------------
 function GameManager:draw()
     love.graphics.printf("Current Turn: " .. self:getCurrentPlayer().name, 0, 20, love.graphics.getWidth(), "center")
-    
-    if self.player1.tower then
-        love.graphics.printf(self.player1.name .. " Tower HP: " .. self.player1.tower.hp, 0, 60, love.graphics.getWidth(), "left")
-    end
-    if self.player2.tower then
-        love.graphics.printf(self.player2.name .. " Tower HP: " .. self.player2.tower.hp, 0, 80, love.graphics.getWidth(), "left")
-    end
 end
 
 --------------------------------------------------
@@ -135,7 +154,7 @@ end
 
 --------------------------------------------------
 -- startTurn():
--- Gains mana, draws a card, resets minions, and triggers onTurnStart callback.
+-- Gains mana, draws a card, resets minions, triggers onTurnStart.
 --------------------------------------------------
 function GameManager:startTurn()
     local player = self:getCurrentPlayer()
@@ -165,7 +184,7 @@ end
 
 --------------------------------------------------
 -- getCurrentPlayer():
--- Returns player1 if currentPlayer == 1, otherwise player2.
+-- Returns player1 if currentPlayer == 1, else player2.
 --------------------------------------------------
 function GameManager:getCurrentPlayer()
     return (self.currentPlayer == 1) and self.player1 or self.player2
@@ -181,16 +200,20 @@ end
 
 --------------------------------------------------
 -- isTileOccupiedByTower(x, y):
--- Checks if the given tile coordinates are occupied by a tower.
+-- Returns the tower object occupying (x,y), or nil if none.
 --------------------------------------------------
 function GameManager:isTileOccupiedByTower(x, y)
-    if self.player1.tower and self.player1.tower.position.x == x and self.player1.tower.position.y == y then
-        return true
+    for _, tower in ipairs(self.player1.towers) do
+        if tower.position.x == x and tower.position.y == y then
+            return tower
+        end
     end
-    if self.player2.tower and self.player2.tower.position.x == x and self.player2.tower.position.y == y then
-        return true
+    for _, tower in ipairs(self.player2.towers) do
+        if tower.position.x == x and tower.position.y == y then
+            return tower
+        end
     end
-    return false
+    return nil
 end
 
 --------------------------------------------------
@@ -218,16 +241,11 @@ function GameManager:playCardFromHand(player, cardIndex)
     end
     player.manaCrystals = player.manaCrystals - card.cost
     table.remove(player.hand, cardIndex)
-    
-    if (self.player1.tower and self.player1.tower.hp <= 0) or 
-       (self.player2.tower and self.player2.tower.hp <= 0) then
-        self:endGame()
-    end
 end
 
 --------------------------------------------------
 -- summonMinion(player, card, cardIndex, x, y):
--- Places a minion on the board at (x, y), if valid.
+-- Places a minion on the board if valid.
 --------------------------------------------------
 function GameManager:summonMinion(player, card, cardIndex, x, y)
     local validSpawnRow = (player == self.player1) and self.board.rows or 1
@@ -253,22 +271,15 @@ function GameManager:summonMinion(player, card, cardIndex, x, y)
         canAttack = false,
         owner = player,
         hasMoved = false,
-        summoningSickness = true
+        summoningSickness = true,
+        battlecry = card.battlecry,
+        deathrattle = card.deathrattle
     }
-    if card.deathrattle then
-        minion.deathrattle = card.deathrattle
-    end
     local success = self.board:placeMinion(minion, x, y)
     if success then
         EffectManager.triggerBattlecry(card, self, player)
         table.remove(player.hand, cardIndex)
         player.manaCrystals = player.manaCrystals - card.cost
-        
-        if (self.player1.tower and self.player1.tower.hp <= 0) or 
-           (self.player2.tower and self.player2.tower.hp <= 0) then
-            self:endGame()
-        end
-        
         return true
     else
         print("Failed to place minion: spawn zone full!")
@@ -278,24 +289,27 @@ end
 
 --------------------------------------------------
 -- endGame():
--- Ends the game and determines the winner based solely on towers.
--- Triggers the onGameOver callback if one is set.
+-- Ends the game. Winner is whoever still has towers alive.
+-- If both or neither have towers, it's a draw.
 --------------------------------------------------
 function GameManager:endGame()
-    if self.gameOver then return end  -- Prevent multiple calls.
+    if self.gameOver then return end
     self.gameOver = true
 
     print("Game Over!")
-    
+
+    local p1Alive = (#self.player1.towers > 0)
+    local p2Alive = (#self.player2.towers > 0)
     local winner = nil
-    if not self.player1.tower and not self.player2.tower then
-        winner = nil  -- Draw
-    elseif not self.player1.tower then
-        winner = self.player2
-    elseif not self.player2.tower then
+
+    if p1Alive and not p2Alive then
         winner = self.player1
+    elseif p2Alive and not p1Alive then
+        winner = self.player2
+    else
+        winner = nil -- Draw
     end
-    
+
     if winner then
         print(winner.name .. " wins the match!")
     else
@@ -305,6 +319,16 @@ function GameManager:endGame()
     if self.onGameOver then
         self.onGameOver(winner)
     end
+end
+
+--------------------------------------------------
+-- getTowerAt(x, y):
+-- Returns the tower at x,y if any, else nil
+-- (Optional helper if you want direct lookups).
+--------------------------------------------------
+function GameManager:getTowerAt(x, y)
+    local tower = self:isTileOccupiedByTower(x, y)
+    return tower
 end
 
 return GameManager
