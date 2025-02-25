@@ -1,7 +1,7 @@
 -- game/managers/effectmanager.lua
 -- Centralizes card effect logic for spells/weapons (via effectKey),
 -- plus functions to trigger Battlecry and Deathrattle on minions.
--- Now with support for targeted effects!
+-- Now with support for targeted effects and minion weapons!
 
 local EffectManager = {}
 
@@ -11,6 +11,7 @@ local EffectManager = {}
 --   to an effect definition containing:
 --   - requiresTarget: boolean indicating if user must select a target
 --   - targetType: what kind of target is valid ("EnemyTower", "AnyTower", "Minion", etc.)
+--   - validationFn: optional function to further validate targets
 --   - effectFn: function that applies the effect with the selected target
 --------------------------------------------------
 local effectRegistry = {
@@ -20,8 +21,8 @@ local effectRegistry = {
         effectFn = function(gameManager, player, target)
             if target and target.hp then
                 -- Deal 6 damage to the selected tower
-                target.hp = target.hp - 8
-                print("Fireball dealt 8 damage to a tower!")
+                target.hp = target.hp - 6
+                print("Fireball dealt 6 damage to a tower!")
             else
                 print("Warning: Fireball effect called without valid target")
                 return false
@@ -31,17 +32,104 @@ local effectRegistry = {
     },
 
     FieryWarAxeEffect = {
-        requiresTarget = false,
-        targetType = nil,
-        effectFn = function(gameManager, player)
-            player.weapon = {
-                attack = 3,
-                durability = 2
-            }
-            return true
+        requiresTarget = true,
+        targetType = "FriendlyMinion",
+        validationFn = function(minion, card)
+            -- Check if this minion can equip this weapon (matches archetype)
+            return minion.archetype == card.archetypeRequirement
+        end,
+        effectFn = function(gameManager, player, target, card)
+            -- Apply weapon to the minion
+            if target and target.archetype == card.archetypeRequirement then
+                -- Create the weapon object for the minion
+                target.weapon = {
+                    name = card.name,
+                    attack = card.attack,
+                    durability = card.durability,
+                    baseAttack = target.attack  -- Store original attack
+                }
+                
+                -- Boost the minion's attack
+                target.attack = target.attack + card.attack
+                print(target.name .. " equipped " .. card.name .. "!")
+                return true
+            else
+                print("Warning: Weapon cannot be equipped by this minion")
+                return false
+            end
+        end
+    },
+    
+    LongbowEffect = {
+        requiresTarget = true,
+        targetType = "FriendlyMinion",
+        validationFn = function(minion, card)
+            return minion.archetype == card.archetypeRequirement
+        end,
+        effectFn = function(gameManager, player, target, card)
+            if target and target.archetype == card.archetypeRequirement then
+                target.weapon = {
+                    name = card.name,
+                    attack = card.attack,
+                    durability = card.durability,
+                    baseAttack = target.attack
+                }
+                
+                target.attack = target.attack + card.attack
+                print(target.name .. " equipped " .. card.name .. "!")
+                return true
+            else
+                print("Warning: Weapon cannot be equipped by this minion")
+                return false
+            end
+        end
+    },
+    
+    StaffOfFireEffect = {
+        requiresTarget = true,
+        targetType = "FriendlyMinion",
+        validationFn = function(minion, card)
+            return minion.archetype == card.archetypeRequirement
+        end,
+        effectFn = function(gameManager, player, target, card)
+            if target and target.archetype == card.archetypeRequirement then
+                target.weapon = {
+                    name = card.name,
+                    attack = card.attack,
+                    durability = card.durability,
+                    baseAttack = target.attack
+                }
+                
+                target.attack = target.attack + card.attack
+                print(target.name .. " equipped " .. card.name .. "!")
+                return true
+            else
+                print("Warning: Weapon cannot be equipped by this minion")
+                return false
+            end
         end
     }
 }
+
+--------------------------------------------------
+-- Helper function: reduceWeaponDurability
+-- Used when a minion with a weapon attacks.
+-- Reduces the weapon's durability and, when it breaks,
+-- restores the minion's original attack value.
+--------------------------------------------------
+function EffectManager.reduceWeaponDurability(minion)
+    if minion.weapon then
+        minion.weapon.durability = minion.weapon.durability - 1
+        
+        if minion.weapon.durability <= 0 then
+            -- Weapon breaks
+            print(minion.name .. "'s " .. minion.weapon.name .. " broke!")
+            -- Restore original attack
+            minion.attack = minion.weapon.baseAttack
+            minion.weapon = nil
+        end
+    end
+end
 
 --------------------------------------------------
 -- requiresTarget(effectKey):
@@ -62,19 +150,35 @@ function EffectManager.getTargetType(effectKey)
 end
 
 --------------------------------------------------
--- applyEffectKey(effectKey, gameManager, player, optionalTarget):
+-- validateTarget(effectKey, target, card):
+--   Returns true if the target is valid for this effect.
+--------------------------------------------------
+function EffectManager.validateTarget(effectKey, target, card)
+    local effect = effectRegistry[effectKey]
+    if not effect then return false end
+    
+    if effect.validationFn then
+        return effect.validationFn(target, card)
+    end
+    
+    return true  -- No validation function means any target is valid
+end
+
+--------------------------------------------------
+-- applyEffectKey(effectKey, gameManager, player, optionalTarget, card):
 --   Look up the function in 'effectRegistry' and call it.
 --   If the effect requires a target but none is provided, return false.
 --   Returns true if the effect was successfully applied.
+--   Now passes the full card data for weapons.
 --------------------------------------------------
-function EffectManager.applyEffectKey(effectKey, gameManager, player, optionalTarget)
+function EffectManager.applyEffectKey(effectKey, gameManager, player, optionalTarget, card)
     local effect = effectRegistry[effectKey]
     if effect then
         if effect.requiresTarget and not optionalTarget then
             print("Warning: Effect requires target but none provided:", effectKey)
             return false
         end
-        return effect.effectFn(gameManager, player, optionalTarget)
+        return effect.effectFn(gameManager, player, optionalTarget, card)
     else
         print("Warning: No effect function found for key:", effectKey)
         return false

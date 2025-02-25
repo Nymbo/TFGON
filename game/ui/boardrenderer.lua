@@ -1,6 +1,7 @@
 -- game/ui/boardrenderer.lua
 -- Renders the grid-based board with variable dimensions and tooltips
 -- Updated to draw multiple towers per player.
+-- Now with improved weapon visuals and unified tooltip system.
 
 local BoardRenderer = {}
 local Theme = require("game.ui.theme")
@@ -88,6 +89,69 @@ local function drawStatCircle(x, y, value, circleColor, bgColor)
 end
 
 --------------------------------------------------
+-- drawWeaponIcon: Helper to show a minion has a weapon
+-- Now improved with a larger durability tracker
+--------------------------------------------------
+local function drawWeaponIcon(x, y, minion)
+    if not minion.weapon then return end
+    
+    -- Draw weapon durability circle in the top-middle of the minion card
+    -- Using the same size as other stat circles
+    local weaponX = x + TILE_SIZE/2
+    local weaponY = y + PAD_Y
+    
+    -- Draw durability stat circle (matching other stat circles)
+    love.graphics.setColor(0.8, 0.7, 0.2, 1) -- Gold background
+    love.graphics.circle("fill", weaponX, weaponY, CIRCLE_RADIUS + 2) -- Slightly larger background
+    
+    love.graphics.setColor(0.6, 0.5, 0.1, 1) -- Darker gold for the main circle
+    love.graphics.circle("fill", weaponX, weaponY, CIRCLE_RADIUS)
+    
+    love.graphics.setColor(0, 0, 0, 0.5)
+    love.graphics.circle("line", weaponX, weaponY, CIRCLE_RADIUS)
+    
+    -- Draw durability value
+    local durabilityStr = tostring(minion.weapon.durability)
+    love.graphics.setFont(boardFonts.cardStat)
+    local textWidth = boardFonts.cardStat:getWidth(durabilityStr)
+    local textHeight = boardFonts.cardStat:getHeight()
+    local textX = weaponX - textWidth / 2
+    local textY = weaponY - textHeight / 2
+    
+    -- Text outline for better visibility
+    love.graphics.setColor(0, 0, 0, 1)
+    love.graphics.print(durabilityStr, textX - 1, textY)
+    love.graphics.print(durabilityStr, textX + 1, textY)
+    love.graphics.print(durabilityStr, textX, textY - 1)
+    love.graphics.print(durabilityStr, textX, textY + 1)
+    
+    -- Main text color
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.print(durabilityStr, textX, textY)
+    
+    -- Draw a weapon overlay/nameplate at the bottom of the minion card
+    local plateX = x
+    local plateY = y + TILE_SIZE - 3 -- Position at bottom, slightly overlapping
+    local plateWidth = TILE_SIZE
+    local plateHeight = 20
+    
+    -- Gray background with gold border
+    love.graphics.setColor(0.3, 0.3, 0.35, 0.9) -- #4c4c59 with slight transparency
+    love.graphics.rectangle("fill", plateX, plateY, plateWidth, plateHeight, 4)
+    
+    -- Gold border (same as card outline)
+    love.graphics.setColor(0.8, 0.7, 0.5, 1) -- Gold border color
+    love.graphics.setLineWidth(2)
+    love.graphics.rectangle("line", plateX, plateY, plateWidth, plateHeight, 4)
+    love.graphics.setLineWidth(1)
+    
+    -- Weapon name
+    love.graphics.setFont(boardFonts.cardType) -- Using smaller font for the weapon name
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.printf(minion.weapon.name, plateX + 3, plateY + 3, plateWidth - 6, "center")
+end
+
+--------------------------------------------------
 -- drawMinion: Renders a minion in its grid cell
 --------------------------------------------------
 local function drawMinion(minion, cellX, cellY, currentPlayer, selectedMinion)
@@ -119,12 +183,14 @@ local function drawMinion(minion, cellX, cellY, currentPlayer, selectedMinion)
     love.graphics.setColor(Theme.colors.textPrimary)
     love.graphics.printf(minion.name, x + 10, y + 16, TILE_SIZE - 20, "center")
 
-    -- Archetype label at bottom
-    love.graphics.setColor(Theme.colors.buttonBase)
-    love.graphics.rectangle("fill", x + 3, y + TILE_SIZE - 16, TILE_SIZE - 6, 13, 3)
-    love.graphics.setColor(Theme.colors.textPrimary)
-    love.graphics.setFont(boardFonts.cardType)
-    love.graphics.printf(minion.archetype, x + 3, y + TILE_SIZE - 15, TILE_SIZE - 6, "center")
+    -- Archetype label at bottom - only if no weapon
+    if not minion.weapon then
+        love.graphics.setColor(Theme.colors.buttonBase)
+        love.graphics.rectangle("fill", x + 3, y + TILE_SIZE - 16, TILE_SIZE - 6, 13, 3)
+        love.graphics.setColor(Theme.colors.textPrimary)
+        love.graphics.setFont(boardFonts.cardType)
+        love.graphics.printf(minion.archetype, x + 3, y + TILE_SIZE - 15, TILE_SIZE - 6, "center")
+    end
 
     -- Stat circles
     drawStatCircle(
@@ -148,6 +214,11 @@ local function drawMinion(minion, cellX, cellY, currentPlayer, selectedMinion)
         Theme.colors.healthCircle,
         Theme.colors.healthBg
     )
+
+    -- Draw weapon icon if the minion has one
+    if minion.weapon then
+        drawWeaponIcon(x, y, minion)
+    end
 
     -- Outline logic
     if minion.owner == currentPlayer then
@@ -329,7 +400,7 @@ function BoardRenderer.drawBoard(
     -- Show move range
     drawMoveRange(board, selectedMinion, gameManager)
 
-    -- Draw minions
+    -- Draw minions (no separate weapon cards)
     board:forEachMinion(function(minion, col, row)
         drawMinion(minion, col, row, currentPlayer, selectedMinion)
     end)
@@ -355,8 +426,9 @@ function BoardRenderer.drawBoard(
 
     -- Show overlay for possible spawn cells if there's a pending Summon
     drawSummonOverlay(board, pendingSummon, gameManager)
-
-    -- Tooltip
+    
+    -- Update and draw the standard minion tooltip
+    -- The Tooltip module will handle displaying weapon info
     Tooltip.update(love.timer.getDelta(), mx, my, hoveredMinion)
     Tooltip.draw()
 

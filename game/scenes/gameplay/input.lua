@@ -1,7 +1,7 @@
 -- game/scenes/gameplay/input.lua
 -- Updated to handle multiple towers. If a tile is occupied by *any* tower,
 -- we retrieve that tower object from isTileOccupiedByTower().
--- Now also handles targeting for spell effects.
+-- Now also handles targeting for spell effects and minion weapons!
 
 local CardRenderer = require("game.ui.cardrenderer")
 local BoardRenderer = require("game.ui.boardrenderer")
@@ -53,7 +53,7 @@ function InputSystem.mousepressed(gameplay, x, y, button, istouch, presses)
         return
     end
 
-    -- Possibly dragging a card from hand
+    -- Possibly clicking on a card in hand
     local hand = currentPlayer.hand
     local cardWidth, cardHeight = CardRenderer.getCardDimensions()
     local totalWidth = #hand * (cardWidth + 10)
@@ -68,8 +68,19 @@ function InputSystem.mousepressed(gameplay, x, y, button, istouch, presses)
                 return
             end
             
-            -- Check if this card effect requires targeting
-            if card.effectKey and EffectManager.requiresTarget(card.effectKey) then
+            -- Handle card play based on type
+            if card.cardType == "Weapon" then
+                -- Set pending effect state for targeting a minion with the weapon
+                gameplay.pendingEffect = card.effectKey
+                gameplay.pendingEffectCard = card
+                gameplay.pendingEffectCardIndex = i
+                -- Remove card from hand to show it's being played
+                table.remove(hand, i)
+                -- Start tracking valid targets
+                gameplay:updateValidTargets()
+                return
+                
+            elseif card.cardType == "Spell" and card.effectKey and EffectManager.requiresTarget(card.effectKey) then
                 -- Set pending effect state for targeting
                 gameplay.pendingEffect = card.effectKey
                 gameplay.pendingEffectCard = card
@@ -79,27 +90,29 @@ function InputSystem.mousepressed(gameplay, x, y, button, istouch, presses)
                 -- Start tracking valid targets
                 gameplay:updateValidTargets()
                 return
+                
             elseif card.cardType == "Minion" then
                 -- If it's a minion, set pendingSummon
                 gameplay.pendingSummon = { card = card, cardIndex = i, player = currentPlayer }
+                
+                -- Remove from hand and mark as dragged for drag-and-drop
+                gameplay.draggedCard = card
+                gameplay.draggedCardIndex = i
+                card.dragging = true
+                card.transform = { x = cardX, y = cardY, width = cardWidth, height = cardHeight }
+                card.target_transform = { x = cardX, y = cardY }
+                card.velocity = { x = 0, y = 0 }
+                table.remove(hand, i)
+                return
+                
             else
-                -- For non-targeting cards (like weapons)
+                -- For non-targeting cards
                 gm:playCardFromHand(currentPlayer, i)
                 return
             end
-            
-            -- Remove from hand and mark as dragged
-            gameplay.draggedCard = card
-            gameplay.draggedCardIndex = i
-            card.dragging = true
-            card.transform = { x = cardX, y = cardY, width = cardWidth, height = cardHeight }
-            card.target_transform = { x = cardX, y = cardY }
-            card.velocity = { x = 0, y = 0 }
-            table.remove(hand, i)
-            return
         end
     end
-
+    
     -- Board click
     local boardX, boardY = BoardRenderer.getBoardPosition()
     local boardWidth = TILE_SIZE * gm.board.cols
@@ -112,7 +125,7 @@ function InputSystem.mousepressed(gameplay, x, y, button, istouch, presses)
         -- Check for a tower on this tile
         local towerOnTile = gm:isTileOccupiedByTower(cellX, cellY)
 
-        -- If a card is being dragged
+        -- If a card is being dragged (for minion placement)
         if gameplay.draggedCard then
             if gameplay.draggedCard.cardType == "Minion" then
                 local validSpawnRow = (currentPlayer == gm.player1) and gm.board.rows or 1
@@ -126,14 +139,13 @@ function InputSystem.mousepressed(gameplay, x, y, button, istouch, presses)
                     return
                 end
             else
-                -- Non-minion (e.g. Spell/Weapon) drag-drop is not strictly implemented here
+                -- Non-minion drag-drop is not implemented
                 print("Cannot drop this card on the board. Try clicking the card from your hand.")
                 return
             end
         end
 
-        -- If we are not dragging a card:
-        -- 1) Check if there's a selectedMinion
+        -- If no card is being dragged, check for minion selection/movement/attack
         if not gameplay.selectedMinion then
             -- Try selecting your own minion
             local clickedMinion = gm.board:getMinionAt(cellX, cellY)

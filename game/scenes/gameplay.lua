@@ -6,7 +6,7 @@
 -- Includes AI opponent functionality.
 -- A game over popup menu is displayed when a player's tower is destroyed,
 -- styled similarly to the Settings menu using theme.lua.
--- Added support for spell targeting
+-- Added support for spell targeting and minion weapons
 
 local GameManager = require("game.managers.gamemanager")
 local DrawSystem = require("game.scenes.gameplay.draw")
@@ -119,7 +119,7 @@ function Gameplay:new(changeSceneCallback, selectedDeck, selectedBoard, aiOppone
     self.bannerTimer = 0
     self.bannerDuration = 1.5
 
-    -- FIX: Initialize bannerFont to avoid nil error.
+    -- Initialize bannerFont to avoid nil error.
     self.bannerFont = love.graphics.newFont("assets/fonts/InknutAntiqua-Regular.ttf", 16)
 
     self.gameManager.onTurnStart = function(whichPlayer)
@@ -144,11 +144,11 @@ function Gameplay:new(changeSceneCallback, selectedDeck, selectedBoard, aiOppone
     self.aiTurnTimer = 0
     self.aiTurnDelay = 0.5
 
-    -- New properties for drag-and-drop
+    -- Properties for drag-and-drop
     self.draggedCard = nil
     self.draggedCardIndex = nil
 
-    -- New properties for targeting effects
+    -- Properties for targeting effects and weapons
     self.pendingEffect = nil
     self.pendingEffectCard = nil
     self.pendingEffectCardIndex = nil
@@ -188,7 +188,7 @@ function Gameplay:update(dt)
     end
 end
 
--- New function to update valid targets for spell effects
+-- Updated function to filter valid targets based on effect/card type
 function Gameplay:updateValidTargets()
     local gm = self.gameManager
     local currentPlayer = gm:getCurrentPlayer()
@@ -242,6 +242,29 @@ function Gameplay:updateValidTargets()
                 minion = minion,
                 position = { x = x, y = y }
             })
+        end)
+    elseif targetType == "FriendlyMinion" then
+        -- Find minions belonging to the current player
+        gm.board:forEachMinion(function(minion, x, y)
+            if minion.owner == currentPlayer then
+                -- If we're equipping a weapon, check if this minion can use it
+                if self.pendingEffectCard and self.pendingEffectCard.cardType == "Weapon" then
+                    if EffectManager.validateTarget(self.pendingEffect, minion, self.pendingEffectCard) then
+                        table.insert(self.validTargets, {
+                            type = "minion",
+                            minion = minion,
+                            position = { x = x, y = y }
+                        })
+                    end
+                else
+                    -- For other effects targeting friendly minions
+                    table.insert(self.validTargets, {
+                        type = "minion",
+                        minion = minion,
+                        position = { x = x, y = y }
+                    })
+                end
+            end
         end)
     end
 end
@@ -297,11 +320,19 @@ function Gameplay:draw()
     
     -- If we have a pending effect, show a text prompt
     if self.pendingEffect then
-        local prompt = "Select a target for " .. (self.pendingEffectCard and self.pendingEffectCard.name or "the spell")
+        local promptMessage
+        if self.pendingEffectCard and self.pendingEffectCard.cardType == "Weapon" then
+            promptMessage = "Select a minion to equip " .. (self.pendingEffectCard.name or "the weapon")
+        else
+            promptMessage = "Select a target for " .. (self.pendingEffectCard and self.pendingEffectCard.name or "the spell")
+        end
+        
         love.graphics.setFont(Theme.fonts.subtitle)
         love.graphics.setColor(Theme.colors.textPrimary)
-        love.graphics.printf(prompt, 0, 20, love.graphics.getWidth(), "center")
+        love.graphics.printf(promptMessage, 0, 20, love.graphics.getWidth(), "center")
     end
+    
+    -- No separate weapon card drawing - this is now handled by BoardRenderer
 end
 
 -- New function to draw targeting indicators
@@ -317,21 +348,47 @@ function Gameplay:drawTargetingIndicators()
         -- Draw a pulsing highlight effect
         local pulseAmount = 0.7 + math.sin(love.timer.getTime() * 5) * 0.3
         
+        -- Use different colors based on target type
+        local targetColor
+        if self.pendingEffectCard and self.pendingEffectCard.cardType == "Weapon" then
+            -- Weapons use green targeting
+            targetColor = {0, 1, 0.2, pulseAmount}
+        else
+            -- Spells use orange targeting
+            targetColor = {1, 0.5, 0, pulseAmount}
+        end
+        
         -- Draw targeting circle
-        love.graphics.setColor(1, 0.5, 0, pulseAmount) -- Orange targeting glow
+        love.graphics.setColor(targetColor)
         love.graphics.setLineWidth(3)
         love.graphics.circle("line", tx + TILE_SIZE/2, ty + TILE_SIZE/2, TILE_SIZE/2 + 5)
         
-        -- Draw crosshair
-        local crosshairSize = TILE_SIZE * 0.3
-        love.graphics.line(
-            tx + TILE_SIZE/2 - crosshairSize, ty + TILE_SIZE/2,
-            tx + TILE_SIZE/2 + crosshairSize, ty + TILE_SIZE/2
-        )
-        love.graphics.line(
-            tx + TILE_SIZE/2, ty + TILE_SIZE/2 - crosshairSize,
-            tx + TILE_SIZE/2, ty + TILE_SIZE/2 + crosshairSize
-        )
+        -- Draw crosshair or symbol based on what we're targeting
+        if self.pendingEffectCard and self.pendingEffectCard.cardType == "Weapon" then
+            -- For weapons, draw a small sword icon or similar
+            -- Here we'll use a simple "+" symbol
+            local symbolSize = TILE_SIZE * 0.3
+            love.graphics.line(
+                tx + TILE_SIZE/2 - symbolSize, ty + TILE_SIZE/2,
+                tx + TILE_SIZE/2 + symbolSize, ty + TILE_SIZE/2
+            )
+            love.graphics.line(
+                tx + TILE_SIZE/2, ty + TILE_SIZE/2 - symbolSize,
+                tx + TILE_SIZE/2, ty + TILE_SIZE/2 + symbolSize
+            )
+        else
+            -- For spells, draw a targeting reticle
+            local crosshairSize = TILE_SIZE * 0.3
+            love.graphics.circle("line", tx + TILE_SIZE/2, ty + TILE_SIZE/2, crosshairSize / 2)
+            love.graphics.line(
+                tx + TILE_SIZE/2 - crosshairSize, ty + TILE_SIZE/2,
+                tx + TILE_SIZE/2 + crosshairSize, ty + TILE_SIZE/2
+            )
+            love.graphics.line(
+                tx + TILE_SIZE/2, ty + TILE_SIZE/2 - crosshairSize,
+                tx + TILE_SIZE/2, ty + TILE_SIZE/2 + crosshairSize
+            )
+        end
         
         love.graphics.setLineWidth(1)
     end
@@ -399,7 +456,8 @@ function Gameplay:mousepressed(x, y, button, istouch, presses)
                 self.pendingEffect,
                 self.gameManager,
                 self.gameManager:getCurrentPlayer(),
-                target
+                target,
+                self.pendingEffectCard  -- Pass the card data for weapons
             )
             
             if success then

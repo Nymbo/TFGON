@@ -1,5 +1,6 @@
 -- data/cards.lua
 -- Card data now includes "movement" and "archetype" for minions.
+-- Weapons now have archetypeRequirement to indicate which minions can equip them.
 return {
     --------------------------------------------------
     -- Basic Minions (with movement and archetype)
@@ -105,7 +106,7 @@ return {
     },
 
     --------------------------------------------------
-    -- Weapon (refactored to use effectKey)
+    -- Weapons (with archetypeRequirement)
     --------------------------------------------------
     {
         name = "Fiery War Axe",
@@ -113,7 +114,26 @@ return {
         cost = 2,
         attack = 3,
         durability = 2,
+        archetypeRequirement = "Melee", -- Only Melee minions can equip this
         effectKey = "FieryWarAxeEffect"
+    },
+    {
+        name = "Longbow",
+        cardType = "Weapon",
+        cost = 3,
+        attack = 2,
+        durability = 3,
+        archetypeRequirement = "Ranged", -- Only Ranged minions can equip this
+        effectKey = "LongbowEffect"
+    },
+    {
+        name = "Staff of Fire",
+        cardType = "Weapon",
+        cost = 4,
+        attack = 4,
+        durability = 2,
+        archetypeRequirement = "Magic", -- Only Magic minions can equip this
+        effectKey = "StaffOfFireEffect"
     },
 
     --------------------------------------------------
@@ -170,7 +190,10 @@ return {
         deathrattle = function(gameManager, player)
             -- TEXT: deal 2 damage to enemy hero
             local enemy = gameManager:getEnemyPlayer(player)
-            enemy.health = enemy.health - 2
+            -- Update to deal damage to a tower instead
+            if #enemy.towers > 0 then
+                enemy.towers[1].hp = enemy.towers[1].hp - 2
+            end
         end
     }
 }

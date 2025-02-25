@@ -1,6 +1,7 @@
 -- game/scenes/gameplay/combat.lua
 -- Minor changes to handle tower arrays. We rely on the actual tower object
 -- passed in {type="tower", tower=<some tower>}.
+-- Now with support for minion weapons - reduces durability after attack.
 
 local CombatSystem = {}
 local EffectManager = require("game.managers.effectmanager")
@@ -33,12 +34,7 @@ function CombatSystem.resolveAttack(gameplayOrManager, attackerInfo, targetInfo)
     if attackerInfo.type == "minion" then
         local attacker = attackerInfo.minion
 
-        if targetInfo.type == "hero" then
-            local enemy = gm:getEnemyPlayer(currentPlayer)
-            enemy.health = enemy.health - attacker.attack
-            attacker.canAttack = false
-
-        elseif targetInfo.type == "minion" then
+        if targetInfo.type == "minion" then
             local target = targetInfo.minion
             local distance = chebyshevDistance(attacker.position, target.position)
             local attackerReach = getReach(attacker.archetype)
@@ -61,6 +57,11 @@ function CombatSystem.resolveAttack(gameplayOrManager, attackerInfo, targetInfo)
                 else
                     print(attacker.name .. " safely attacked from distance!")
                 end
+            end
+
+            -- If the attacker has a weapon, reduce its durability
+            if attacker.weapon then
+                EffectManager.reduceWeaponDurability(attacker)
             end
 
             if target.currentHealth <= 0 then
@@ -86,37 +87,15 @@ function CombatSystem.resolveAttack(gameplayOrManager, attackerInfo, targetInfo)
             if distance <= attackerReach then
                 tower.hp = tower.hp - attacker.attack
                 print(attacker.name .. " attacked a tower for " .. attacker.attack .. " damage!")
+                
+                -- If the attacker has a weapon, reduce its durability
+                if attacker.weapon then
+                    EffectManager.reduceWeaponDurability(attacker)
+                end
+                
                 attacker.canAttack = false
             else
                 print("Tower is out of attack range!")
-            end
-        end
-
-    elseif attackerInfo.type == "hero" then
-        local weapon = currentPlayer.weapon
-        if weapon then
-            currentPlayer.heroAttacked = true
-            local enemy = gm:getEnemyPlayer(currentPlayer)
-
-            if targetInfo.type == "hero" then
-                enemy.health = enemy.health - weapon.attack
-            elseif targetInfo.type == "minion" then
-                local target = targetInfo.minion
-                target.currentHealth = target.currentHealth - weapon.attack
-                if target.currentHealth <= 0 then
-                    local tx, ty = target.position.x, target.position.y
-                    EffectManager.triggerDeathrattle(target, gm, gm:getEnemyPlayer(currentPlayer))
-                    gm.board:removeMinion(tx, ty)
-                end
-            elseif targetInfo.type == "tower" then
-                local tower = targetInfo.tower
-                tower.hp = tower.hp - weapon.attack
-                print("Hero attacked a tower for " .. weapon.attack .. " damage!")
-            end
-
-            weapon.durability = weapon.durability - 1
-            if weapon.durability <= 0 then
-                currentPlayer.weapon = nil
             end
         end
     end
