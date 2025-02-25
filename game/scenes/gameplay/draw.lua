@@ -1,5 +1,6 @@
 -- game/scenes/gameplay/draw.lua
 -- Handles drawing the Gameplay scene elements
+-- Updated with support for targeting indicators
 
 local BoardRenderer = require("game.ui.boardrenderer")
 local CardRenderer = require("game.ui.cardrenderer")
@@ -162,6 +163,22 @@ function DrawSystem.drawGameplayScene(gameplay)
     local p1Y = love.graphics.getHeight() - frameHeight - 20
     love.graphics.draw(manaFrame, p1X, p1Y, 0, manaScale, manaScale)
     love.graphics.printf(p1ManaText, p1X, p1Y + (frameHeight - manaFont:getHeight())/2, frameWidth, "center")
+
+    -- If we have a pending effect, draw the card being played near the cursor
+    if gameplay.pendingEffectCard then
+        local mx, my = love.mouse.getPosition()
+        -- Draw a small version of the card following the cursor
+        local miniScale = 0.7
+        local miniCardWidth = cardWidth * miniScale
+        local miniCardHeight = cardHeight * miniScale
+        
+        love.graphics.setColor(1, 1, 1, 0.7)  -- Semi-transparent
+        love.graphics.push()
+        love.graphics.translate(mx - miniCardWidth/2, my - miniCardHeight - 20)
+        love.graphics.scale(miniScale, miniScale)
+        CardRenderer.drawCard(gameplay.pendingEffectCard, 0, 0, true)
+        love.graphics.pop()
+    end
 
     love.graphics.setColor(1, 1, 1, 1)
 end

@@ -1,43 +1,83 @@
 -- game/managers/effectmanager.lua
 -- Centralizes card effect logic for spells/weapons (via effectKey),
 -- plus functions to trigger Battlecry and Deathrattle on minions.
+-- Now with support for targeted effects!
 
 local EffectManager = {}
 
 --------------------------------------------------
 -- effectRegistry:
 --   A lookup table that maps an 'effectKey' string
---   to a function that applies that effect.
---
---   For example, "FireballEffect" deals 6 damage to
---   the enemy hero; "FieryWarAxeEffect" equips a 3/2
---   weapon, etc.
+--   to an effect definition containing:
+--   - requiresTarget: boolean indicating if user must select a target
+--   - targetType: what kind of target is valid ("EnemyTower", "AnyTower", "Minion", etc.)
+--   - effectFn: function that applies the effect with the selected target
 --------------------------------------------------
 local effectRegistry = {
-    FireballEffect = function(gameManager, player)
-        local enemy = gameManager:getEnemyPlayer(player)
-        enemy.health = enemy.health - 6
-    end,
+    FireballEffect = {
+        requiresTarget = true,
+        targetType = "EnemyTower",
+        effectFn = function(gameManager, player, target)
+            if target and target.hp then
+                -- Deal 6 damage to the selected tower
+                target.hp = target.hp - 8
+                print("Fireball dealt 8 damage to a tower!")
+            else
+                print("Warning: Fireball effect called without valid target")
+                return false
+            end
+            return true
+        end
+    },
 
-    FieryWarAxeEffect = function(gameManager, player)
-        player.weapon = {
-            attack = 3,
-            durability = 2
-        }
-    end
+    FieryWarAxeEffect = {
+        requiresTarget = false,
+        targetType = nil,
+        effectFn = function(gameManager, player)
+            player.weapon = {
+                attack = 3,
+                durability = 2
+            }
+            return true
+        end
+    }
 }
+
+--------------------------------------------------
+-- requiresTarget(effectKey):
+--   Returns true if the effect requires a target to be selected.
+--------------------------------------------------
+function EffectManager.requiresTarget(effectKey)
+    local effect = effectRegistry[effectKey]
+    return effect and effect.requiresTarget or false
+end
+
+--------------------------------------------------
+-- getTargetType(effectKey):
+--   Returns the type of target required for this effect.
+--------------------------------------------------
+function EffectManager.getTargetType(effectKey)
+    local effect = effectRegistry[effectKey]
+    return effect and effect.targetType or nil
+end
 
 --------------------------------------------------
 -- applyEffectKey(effectKey, gameManager, player, optionalTarget):
 --   Look up the function in 'effectRegistry' and call it.
---   If the effect doesn't exist, do nothing (or log an error).
+--   If the effect requires a target but none is provided, return false.
+--   Returns true if the effect was successfully applied.
 --------------------------------------------------
 function EffectManager.applyEffectKey(effectKey, gameManager, player, optionalTarget)
-    local effectFn = effectRegistry[effectKey]
-    if effectFn then
-        effectFn(gameManager, player, optionalTarget)
+    local effect = effectRegistry[effectKey]
+    if effect then
+        if effect.requiresTarget and not optionalTarget then
+            print("Warning: Effect requires target but none provided:", effectKey)
+            return false
+        end
+        return effect.effectFn(gameManager, player, optionalTarget)
     else
         print("Warning: No effect function found for key:", effectKey)
+        return false
     end
 end
 

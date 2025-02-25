@@ -1,4 +1,4 @@
--- game/scenes/gameplay/gameplay.lua
+-- game/scenes/gameplay.lua
 -- Main gameplay scene.
 -- Now accepts a selected deck for player 1 via its constructor.
 -- Also accepts a selected board configuration.
@@ -6,6 +6,7 @@
 -- Includes AI opponent functionality.
 -- A game over popup menu is displayed when a player's tower is destroyed,
 -- styled similarly to the Settings menu using theme.lua.
+-- Added support for spell targeting
 
 local GameManager = require("game.managers.gamemanager")
 local DrawSystem = require("game.scenes.gameplay.draw")
@@ -16,6 +17,7 @@ local AIManager = require("game.managers.aimanager")
 local Theme = require("game.ui.theme")
 local CardRenderer = require("game.ui.cardrenderer")
 local Animation = require("game.managers.animation")  -- Import our Animation manager
+local EffectManager = require("game.managers.effectmanager") -- Added for target checking
 
 -- Local helper function to draw a themed button (similar to settings.lua)
 local function drawThemedButton(text, x, y, width, height, isHovered, isSelected)
@@ -146,6 +148,12 @@ function Gameplay:new(changeSceneCallback, selectedDeck, selectedBoard, aiOppone
     self.draggedCard = nil
     self.draggedCardIndex = nil
 
+    -- New properties for targeting effects
+    self.pendingEffect = nil
+    self.pendingEffectCard = nil
+    self.pendingEffectCardIndex = nil
+    self.validTargets = {}
+
     return self
 end
 
@@ -173,6 +181,69 @@ function Gameplay:update(dt)
     if self.draggedCard then
         updateDraggedCard(self.draggedCard, dt)
     end
+    
+    -- If we have a pending effect, update valid targets
+    if self.pendingEffect then
+        self:updateValidTargets()
+    end
+end
+
+-- New function to update valid targets for spell effects
+function Gameplay:updateValidTargets()
+    local gm = self.gameManager
+    local currentPlayer = gm:getCurrentPlayer()
+    local enemyPlayer = gm:getEnemyPlayer(currentPlayer)
+    
+    self.validTargets = {}
+    
+    local targetType = EffectManager.getTargetType(self.pendingEffect)
+    
+    if targetType == "EnemyTower" then
+        -- Add all enemy towers as valid targets
+        for _, tower in ipairs(enemyPlayer.towers) do
+            table.insert(self.validTargets, { 
+                type = "tower", 
+                tower = tower,
+                position = tower.position 
+            })
+        end
+    elseif targetType == "AnyTower" then
+        -- Add all towers as valid targets
+        for _, tower in ipairs(currentPlayer.towers) do
+            table.insert(self.validTargets, { 
+                type = "tower", 
+                tower = tower,
+                position = tower.position 
+            })
+        end
+        for _, tower in ipairs(enemyPlayer.towers) do
+            table.insert(self.validTargets, { 
+                type = "tower", 
+                tower = tower,
+                position = tower.position 
+            })
+        end
+    elseif targetType == "EnemyMinion" then
+        -- Find all enemy minions
+        gm.board:forEachMinion(function(minion, x, y)
+            if minion.owner == enemyPlayer then
+                table.insert(self.validTargets, {
+                    type = "minion",
+                    minion = minion,
+                    position = { x = x, y = y }
+                })
+            end
+        end)
+    elseif targetType == "AnyMinion" then
+        -- Find all minions
+        gm.board:forEachMinion(function(minion, x, y)
+            table.insert(self.validTargets, {
+                type = "minion",
+                minion = minion,
+                position = { x = x, y = y }
+            })
+        end)
+    end
 end
 
 function Gameplay:draw()
@@ -183,6 +254,11 @@ function Gameplay:draw()
         love.graphics.setColor(1, 1, 1, 0.5)
         CardRenderer.drawCard(self.draggedCard, self.draggedCard.transform.x, self.draggedCard.transform.y, true)
         love.graphics.setColor(1, 1, 1, 1)
+    end
+
+    -- Draw targeting indicator if we have a pending effect
+    if self.pendingEffect then
+        self:drawTargetingIndicators()
     end
 
     if self.bannerTimer > 0 and self.bannerImage then
@@ -218,6 +294,50 @@ function Gameplay:draw()
     if self.showGameOverPopup then
         self:drawGameOverPopup()
     end
+    
+    -- If we have a pending effect, show a text prompt
+    if self.pendingEffect then
+        local prompt = "Select a target for " .. (self.pendingEffectCard and self.pendingEffectCard.name or "the spell")
+        love.graphics.setFont(Theme.fonts.subtitle)
+        love.graphics.setColor(Theme.colors.textPrimary)
+        love.graphics.printf(prompt, 0, 20, love.graphics.getWidth(), "center")
+    end
+end
+
+-- New function to draw targeting indicators
+function Gameplay:drawTargetingIndicators()
+    local boardX, boardY = BoardRenderer.getBoardPosition()
+    local TILE_SIZE = BoardRenderer.getTileSize()
+    
+    -- Draw targeting indicator for each valid target
+    for _, target in ipairs(self.validTargets) do
+        local tx = boardX + (target.position.x - 1) * TILE_SIZE
+        local ty = boardY + (target.position.y - 1) * TILE_SIZE
+        
+        -- Draw a pulsing highlight effect
+        local pulseAmount = 0.7 + math.sin(love.timer.getTime() * 5) * 0.3
+        
+        -- Draw targeting circle
+        love.graphics.setColor(1, 0.5, 0, pulseAmount) -- Orange targeting glow
+        love.graphics.setLineWidth(3)
+        love.graphics.circle("line", tx + TILE_SIZE/2, ty + TILE_SIZE/2, TILE_SIZE/2 + 5)
+        
+        -- Draw crosshair
+        local crosshairSize = TILE_SIZE * 0.3
+        love.graphics.line(
+            tx + TILE_SIZE/2 - crosshairSize, ty + TILE_SIZE/2,
+            tx + TILE_SIZE/2 + crosshairSize, ty + TILE_SIZE/2
+        )
+        love.graphics.line(
+            tx + TILE_SIZE/2, ty + TILE_SIZE/2 - crosshairSize,
+            tx + TILE_SIZE/2, ty + TILE_SIZE/2 + crosshairSize
+        )
+        
+        love.graphics.setLineWidth(1)
+    end
+    
+    -- Reset color
+    love.graphics.setColor(1, 1, 1, 1)
 end
 
 function Gameplay:drawGameOverPopup()
@@ -270,7 +390,91 @@ function Gameplay:mousepressed(x, y, button, istouch, presses)
         return
     end
     
+    -- Check if we need to handle a pending effect target selection
+    if self.pendingEffect then
+        local target = self:selectTarget(x, y)
+        if target then
+            -- Apply the pending effect with the selected target
+            local success = EffectManager.applyEffectKey(
+                self.pendingEffect,
+                self.gameManager,
+                self.gameManager:getCurrentPlayer(),
+                target
+            )
+            
+            if success then
+                -- Remove the card from hand (it's already been removed from the hand array)
+                local currentPlayer = self.gameManager:getCurrentPlayer()
+                currentPlayer.manaCrystals = currentPlayer.manaCrystals - self.pendingEffectCard.cost
+            else
+                -- If the effect failed to apply, put the card back in hand
+                table.insert(
+                    self.gameManager:getCurrentPlayer().hand, 
+                    self.pendingEffectCardIndex, 
+                    self.pendingEffectCard
+                )
+            end
+            
+            -- Clear the pending effect state
+            self.pendingEffect = nil
+            self.pendingEffectCard = nil
+            self.pendingEffectCardIndex = nil
+            self.validTargets = {}
+            return
+        end
+        
+        -- If the player clicked outside valid targets, just cancel
+        -- Only cancel if clicked on the board or on the cancel button
+        local boardX, boardY = BoardRenderer.getBoardPosition()
+        local TILE_SIZE = BoardRenderer.getTileSize()
+        local boardWidth = TILE_SIZE * self.gameManager.board.cols
+        local boardHeight = TILE_SIZE * self.gameManager.board.rows
+        
+        if (x >= boardX and x < boardX + boardWidth and
+            y >= boardY and y < boardY + boardHeight) or
+           InputSystem.checkEndTurnHover(self) then
+            
+            -- Put the card back in hand
+            table.insert(
+                self.gameManager:getCurrentPlayer().hand, 
+                self.pendingEffectCardIndex, 
+                self.pendingEffectCard
+            )
+            
+            -- Clear the pending effect state
+            self.pendingEffect = nil
+            self.pendingEffectCard = nil
+            self.pendingEffectCardIndex = nil
+            self.validTargets = {}
+            return
+        end
+    end
+    
     InputSystem.mousepressed(self, x, y, button, istouch, presses)
+end
+
+-- New function to select a target for an effect
+function Gameplay:selectTarget(x, y)
+    local boardX, boardY = BoardRenderer.getBoardPosition()
+    local TILE_SIZE = BoardRenderer.getTileSize()
+    
+    -- Check if the click is on the board
+    local isOnBoard = x >= boardX and x < boardX + (self.gameManager.board.cols * TILE_SIZE) and
+                    y >= boardY and y < boardY + (self.gameManager.board.rows * TILE_SIZE)
+    
+    if isOnBoard then
+        local cellX = math.floor((x - boardX) / TILE_SIZE) + 1
+        local cellY = math.floor((y - boardY) / TILE_SIZE) + 1
+        
+        -- Check if this cell contains a valid target
+        for _, target in ipairs(self.validTargets) do
+            if target.position.x == cellX and target.position.y == cellY then
+                return target.tower or target.minion
+            end
+        end
+    end
+    
+    return nil
 end
 
 function Gameplay:handleGameOverPopupClick(x, y)
@@ -295,6 +499,21 @@ end
 
 function Gameplay:keypressed(key)
     if key == "escape" then
+        -- If there's a pending effect, cancel it and return the card to hand
+        if self.pendingEffect then
+            table.insert(
+                self.gameManager:getCurrentPlayer().hand, 
+                self.pendingEffectCardIndex, 
+                self.pendingEffectCard
+            )
+            
+            self.pendingEffect = nil
+            self.pendingEffectCard = nil
+            self.pendingEffectCardIndex = nil
+            self.validTargets = {}
+            return
+        end
+        
         self.changeSceneCallback("mainmenu")
     end
 end

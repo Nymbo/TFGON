@@ -1,11 +1,13 @@
 -- game/scenes/gameplay/input.lua
 -- Updated to handle multiple towers. If a tile is occupied by *any* tower,
 -- we retrieve that tower object from isTileOccupiedByTower().
+-- Now also handles targeting for spell effects.
 
 local CardRenderer = require("game.ui.cardrenderer")
 local BoardRenderer = require("game.ui.boardrenderer")
 local Theme = require("game.ui.theme")
 local Animation = require("game.managers.animation")
+local EffectManager = require("game.managers.effectmanager") -- Added for target checking
 
 local END_TURN_BUTTON = {
     width = Theme.dimensions.buttonWidth,
@@ -65,10 +67,27 @@ function InputSystem.mousepressed(gameplay, x, y, button, istouch, presses)
                 print("Not enough mana to play " .. card.name)
                 return
             end
-            -- If it's a minion, set pendingSummon
-            if card.cardType == "Minion" then
+            
+            -- Check if this card effect requires targeting
+            if card.effectKey and EffectManager.requiresTarget(card.effectKey) then
+                -- Set pending effect state for targeting
+                gameplay.pendingEffect = card.effectKey
+                gameplay.pendingEffectCard = card
+                gameplay.pendingEffectCardIndex = i
+                -- Remove card from hand to show it's being played
+                table.remove(hand, i)
+                -- Start tracking valid targets
+                gameplay:updateValidTargets()
+                return
+            elseif card.cardType == "Minion" then
+                -- If it's a minion, set pendingSummon
                 gameplay.pendingSummon = { card = card, cardIndex = i, player = currentPlayer }
+            else
+                -- For non-targeting cards (like weapons)
+                gm:playCardFromHand(currentPlayer, i)
+                return
             end
+            
             -- Remove from hand and mark as dragged
             gameplay.draggedCard = card
             gameplay.draggedCardIndex = i

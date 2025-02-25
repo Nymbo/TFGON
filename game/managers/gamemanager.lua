@@ -4,6 +4,7 @@
 --   * The game ends when a player's towers list is empty.
 --   * isTileOccupiedByTower(x, y) returns the specific tower at that tile (if any).
 --   * Summoning minions logic remains the same.
+--   * Now with support for targeting effects
 
 local Player = require("game.core.player")
 local Board = require("game.core.board")
@@ -60,7 +61,8 @@ function GameManager:new(selectedDeck, selectedBoard, isAIOpponent)
         -- Player 1 towers
         if selectedBoard.towerPositions.player1 then
             -- If the board config is an array of positions, create a tower for each
-            if type(selectedBoard.towerPositions.player1) == "table" then
+            if type(selectedBoard.towerPositions.player1) == "table" and selectedBoard.towerPositions.player1[1] then
+                -- It's an array of tower positions
                 for _, tPos in ipairs(selectedBoard.towerPositions.player1) do
                     local twr = Tower:new({
                         owner = self.player1,
@@ -70,12 +72,22 @@ function GameManager:new(selectedDeck, selectedBoard, isAIOpponent)
                     })
                     table.insert(self.player1.towers, twr)
                 end
+            else
+                -- It's a single tower position
+                local twr = Tower:new({
+                    owner = self.player1,
+                    position = selectedBoard.towerPositions.player1,
+                    hp = 30,
+                    imagePath = "assets/images/blue_tower.png"
+                })
+                table.insert(self.player1.towers, twr)
             end
         end
 
         -- Player 2 towers
         if selectedBoard.towerPositions.player2 then
-            if type(selectedBoard.towerPositions.player2) == "table" then
+            if type(selectedBoard.towerPositions.player2) == "table" and selectedBoard.towerPositions.player2[1] then
+                -- It's an array of tower positions
                 for _, tPos in ipairs(selectedBoard.towerPositions.player2) do
                     local twr = Tower:new({
                         owner = self.player2,
@@ -85,6 +97,15 @@ function GameManager:new(selectedDeck, selectedBoard, isAIOpponent)
                     })
                     table.insert(self.player2.towers, twr)
                 end
+            else
+                -- It's a single tower position
+                local twr = Tower:new({
+                    owner = self.player2,
+                    position = selectedBoard.towerPositions.player2,
+                    hp = 30,
+                    imagePath = "assets/images/red_tower.png"
+                })
+                table.insert(self.player2.towers, twr)
             end
         end
     end
@@ -219,28 +240,39 @@ end
 --------------------------------------------------
 -- playCardFromHand(player, cardIndex):
 -- Attempts to play the specified card from the player's hand.
+-- Now with support for effects that require targeting.
 --------------------------------------------------
 function GameManager:playCardFromHand(player, cardIndex)
     local card = player.hand[cardIndex]
-    if not card then return end
+    if not card then return false end
+    
     if card.cost > player.manaCrystals then
         print("Not enough mana to play " .. (card.name or "this card"))
-        return
+        return false
     end
-    if card.cardType == "Minion" then
+    
+    -- If this card has an effect that requires targeting,
+    -- it should be handled in the gameplay scene, not here
+    if card.cardType == "Spell" and card.effectKey and EffectManager.requiresTarget(card.effectKey) then
+        print("This spell requires a target. Cannot play it directly.")
+        return false
+    elseif card.cardType == "Minion" then
         print("Select a spawn tile in your spawn zone to summon the minion.")
-        return
-    elseif card.cardType == "Spell" then
+        return false
+    else
+        -- Apply non-targeting effect
         if card.effectKey then
-            EffectManager.applyEffectKey(card.effectKey, self, player)
-        end
-    elseif card.cardType == "Weapon" then
-        if card.effectKey then
-            EffectManager.applyEffectKey(card.effectKey, self, player)
+            local success = EffectManager.applyEffectKey(card.effectKey, self, player)
+            if not success then
+                print("Failed to apply effect: " .. (card.effectKey or "unknown"))
+                return false
+            end
         end
     end
+    
     player.manaCrystals = player.manaCrystals - card.cost
     table.remove(player.hand, cardIndex)
+    return true
 end
 
 --------------------------------------------------
