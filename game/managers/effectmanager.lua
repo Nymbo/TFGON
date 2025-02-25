@@ -2,8 +2,61 @@
 -- Centralizes card effect logic for spells/weapons (via effectKey),
 -- plus functions to trigger Battlecry and Deathrattle on minions.
 -- Now with support for targeted effects and minion weapons!
+-- Refactored to reduce duplicate code in weapon effects
 
 local EffectManager = {}
+
+--------------------------------------------------
+-- Helper: createWeaponEffect
+-- Factory function to create weapon effect definitions 
+-- with consistent behavior but different archetype requirements.
+--------------------------------------------------
+local function createWeaponEffect(archetypeRequirement)
+    return {
+        requiresTarget = true,
+        targetType = "FriendlyMinion",
+        validationFn = function(minion, card)
+            -- Check if this minion can equip this weapon (matches archetype)
+            return minion.archetype == card.archetypeRequirement
+        end,
+        effectFn = function(gameManager, player, target, card)
+            -- Apply weapon to the minion
+            if target and target.archetype == card.archetypeRequirement then
+                local baseAttack
+                
+                -- Check if minion already has a weapon equipped
+                if target.weapon then
+                    -- If replacing a weapon, use the stored baseAttack
+                    baseAttack = target.weapon.baseAttack
+                    
+                    -- Remove the old weapon's attack bonus
+                    target.attack = baseAttack
+                    
+                    print(target.name .. " discarded " .. target.weapon.name .. "!")
+                else
+                    -- No previous weapon, current attack is base attack
+                    baseAttack = target.attack
+                end
+                
+                -- Create the weapon object for the minion
+                target.weapon = {
+                    name = card.name,
+                    attack = card.attack,
+                    durability = card.durability,
+                    baseAttack = baseAttack  -- Store original attack without weapon bonuses
+                }
+                
+                -- Boost the minion's attack
+                target.attack = baseAttack + card.attack
+                print(target.name .. " equipped " .. card.name .. "!")
+                return true
+            else
+                print("Warning: Weapon cannot be equipped by this minion")
+                return false
+            end
+        end
+    }
+end
 
 --------------------------------------------------
 -- effectRegistry:
@@ -31,84 +84,11 @@ local effectRegistry = {
         end
     },
 
-    FieryWarAxeEffect = {
-        requiresTarget = true,
-        targetType = "FriendlyMinion",
-        validationFn = function(minion, card)
-            -- Check if this minion can equip this weapon (matches archetype)
-            return minion.archetype == card.archetypeRequirement
-        end,
-        effectFn = function(gameManager, player, target, card)
-            -- Apply weapon to the minion
-            if target and target.archetype == card.archetypeRequirement then
-                -- Create the weapon object for the minion
-                target.weapon = {
-                    name = card.name,
-                    attack = card.attack,
-                    durability = card.durability,
-                    baseAttack = target.attack  -- Store original attack
-                }
-                
-                -- Boost the minion's attack
-                target.attack = target.attack + card.attack
-                print(target.name .. " equipped " .. card.name .. "!")
-                return true
-            else
-                print("Warning: Weapon cannot be equipped by this minion")
-                return false
-            end
-        end
-    },
-    
-    LongbowEffect = {
-        requiresTarget = true,
-        targetType = "FriendlyMinion",
-        validationFn = function(minion, card)
-            return minion.archetype == card.archetypeRequirement
-        end,
-        effectFn = function(gameManager, player, target, card)
-            if target and target.archetype == card.archetypeRequirement then
-                target.weapon = {
-                    name = card.name,
-                    attack = card.attack,
-                    durability = card.durability,
-                    baseAttack = target.attack
-                }
-                
-                target.attack = target.attack + card.attack
-                print(target.name .. " equipped " .. card.name .. "!")
-                return true
-            else
-                print("Warning: Weapon cannot be equipped by this minion")
-                return false
-            end
-        end
-    },
-    
-    StaffOfFireEffect = {
-        requiresTarget = true,
-        targetType = "FriendlyMinion",
-        validationFn = function(minion, card)
-            return minion.archetype == card.archetypeRequirement
-        end,
-        effectFn = function(gameManager, player, target, card)
-            if target and target.archetype == card.archetypeRequirement then
-                target.weapon = {
-                    name = card.name,
-                    attack = card.attack,
-                    durability = card.durability,
-                    baseAttack = target.attack
-                }
-                
-                target.attack = target.attack + card.attack
-                print(target.name .. " equipped " .. card.name .. "!")
-                return true
-            else
-                print("Warning: Weapon cannot be equipped by this minion")
-                return false
-            end
-        end
-    }
+    -- Using the factory function to create weapon effects
+    -- This reduces duplicate code while keeping each effect distinct
+    FieryWarAxeEffect = createWeaponEffect("Melee"),
+    LongbowEffect = createWeaponEffect("Ranged"),
+    StaffOfFireEffect = createWeaponEffect("Magic")
 }
 
 --------------------------------------------------
