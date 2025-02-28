@@ -12,7 +12,7 @@ Debug.LEVELS = {
     WARNING = 2,
     ERROR = 3,
     CRITICAL = 4
-    end
+}  -- Fixed: replaced 'end' with '}'
 
 -- Current logging level
 Debug.CURRENT_LEVEL = Debug.LEVELS.INFO
@@ -50,7 +50,7 @@ function Debug.log(message, level)
         [Debug.LEVELS.WARNING] = "WARNING",
         [Debug.LEVELS.ERROR] = "ERROR",
         [Debug.LEVELS.CRITICAL] = "CRITICAL"
-    end
+    }
     
     local timestamp = os.date("%H:%M:%S")
     local logString = string.format("[%s] %s: %s", 
@@ -226,7 +226,7 @@ function Debug.printErrorLog()
         local levelNames = {
             [Debug.LEVELS.ERROR] = "ERROR",
             [Debug.LEVELS.CRITICAL] = "CRITICAL"
-    end
+        }
         print(string.format("%d. [%s] %s: %s", 
                            i, 
                            err.timestamp, 
