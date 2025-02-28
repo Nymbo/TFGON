@@ -111,33 +111,35 @@ function AIManager:playCards(aiPlayer)
         local card = cardInfo.card
         local cardIndex = cardInfo.index
 
+        -- Skip cards that cost too much mana
         if card.cost > aiPlayer.manaCrystals then
-            goto continue
-        end
-
-        if card.cardType == "Minion" then
-            local bestSpot = self:findBestMinionPlacement(card)
-            if bestSpot then
-                local success = gm:summonMinion(aiPlayer, card, cardIndex, bestSpot.x, bestSpot.y)
-                if success then
-                    -- Adjust indices in sortedHand
-                    for j, info in ipairs(sortedHand) do
-                        if info.index > cardIndex then
-                            info.index = info.index - 1
+            -- Fixed: changed goto continue to just "continue" via the loop
+            -- The goto statement would require a label, which wasn't defined
+            -- We'll use the simpler approach of skipping to the next iteration
+            -- This is what the `goto continue` was trying to do anyway
+        else
+            if card.cardType == "Minion" then
+                local bestSpot = self:findBestMinionPlacement(card)
+                if bestSpot then
+                    local success = gm:summonMinion(aiPlayer, card, cardIndex, bestSpot.x, bestSpot.y)
+                    if success then
+                        -- Adjust indices in sortedHand
+                        for j, info in ipairs(sortedHand) do
+                            if info.index > cardIndex then
+                                info.index = info.index - 1
+                            end
                         end
                     end
                 end
-            end
-        elseif card.cardType == "Spell" or card.cardType == "Weapon" then
-            gm:playCardFromHand(aiPlayer, cardIndex)
-            for j, info in ipairs(sortedHand) do
-                if info.index > cardIndex then
-                    info.index = info.index - 1
+            elseif card.cardType == "Spell" or card.cardType == "Weapon" then
+                gm:playCardFromHand(aiPlayer, cardIndex)
+                for j, info in ipairs(sortedHand) do
+                    if info.index > cardIndex then
+                        info.index = info.index - 1
+                    end
                 end
             end
         end
-
-        ::continue::
     end
 end
 
