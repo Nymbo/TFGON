@@ -1,9 +1,11 @@
 -- syntaxchecker.lua
--- A smarter utility to scan Lua files for common syntax errors with improved context awareness
+-- A utility to scan Lua files for common syntax errors with improved context awareness
 
 local SyntaxChecker = {}
 
+--------------------------------------------------
 -- Configuration for the checker
+--------------------------------------------------
 SyntaxChecker.config = {
     -- Files to ignore entirely or partially
     ignoreFiles = {
@@ -20,6 +22,7 @@ SyntaxChecker.config = {
             }
         }
     },
+    
     -- Known globals provided by environment or frameworks
     knownGlobals = {
         -- Lua standard
@@ -55,6 +58,9 @@ SyntaxChecker.config = {
     }
 }
 
+--------------------------------------------------
+-- State variables
+--------------------------------------------------
 -- Table to keep track of found issues
 SyntaxChecker.issues = {}
 
@@ -76,6 +82,10 @@ SyntaxChecker.gotoJumps = {}
 
 -- Current file being checked
 SyntaxChecker.currentFile = ""
+
+--------------------------------------------------
+-- Helper functions
+--------------------------------------------------
 
 -- Caches regex pattern for table fields
 local function isTableFieldDefinition(line, contextStack)
@@ -143,7 +153,9 @@ local function addIssue(lineNum, text, message, severity, suggestion)
     })
 end
 
+--------------------------------------------------
 -- Analyze a line for variables being accessed or assigned
+--------------------------------------------------
 local function analyzeVariableAccess(line, lineNum, specialRules)
     -- Check variable assignments without 'local'
     if not isTableFieldDefinition(line, SyntaxChecker.contextStack) and 
@@ -179,7 +191,9 @@ local function analyzeVariableAccess(line, lineNum, specialRules)
     end
 end
 
+--------------------------------------------------
 -- Check a file for various syntax and style issues
+--------------------------------------------------
 function SyntaxChecker.checkFile(filename)
     local file = io.open(filename, "r")
     if not file then
@@ -203,28 +217,28 @@ function SyntaxChecker.checkFile(filename)
     if not loaded then
         -- Extract line number from error message
         local lineNum = errorMsg:match(":(%d+):")
-        lineNum = tonumber(lineNum) or 0
+        local lineNumAsNumber = tonumber(lineNum) or 0
         
         -- Add as a syntax error issue
-        addIssue(lineNum, "", errorMsg, "error")
+        addIssue(lineNumAsNumber, "", errorMsg, "error")
         
         -- Try to show context around the error
-        if lineNum > 0 then
+        if lineNumAsNumber > 0 then
             local context = {}
-            local currentLine = 0
+            local currentLineNumber = 0
             file:seek("set", 0)
             
-            for line in file:lines() do
-                currentLine = currentLine + 1
-                if currentLine >= lineNum - 3 and currentLine <= lineNum + 3 then
-                    if currentLine == lineNum then
+            for currentLine in file:lines() do
+                currentLineNumber = currentLineNumber + 1
+                if currentLineNumber >= lineNumAsNumber - 3 and currentLineNumber <= lineNumAsNumber + 3 then
+                    if currentLineNumber == lineNumAsNumber then
                         -- Store the error line
-                        SyntaxChecker.issues[#SyntaxChecker.issues].text = line
+                        SyntaxChecker.issues[#SyntaxChecker.issues].text = currentLine
                     end
                     table.insert(context, string.format("%s %3d: %s", 
-                        currentLine == lineNum and ">" or " ", 
-                        currentLine, 
-                        line))
+                        currentLineNumber == lineNumAsNumber and ">" or " ", 
+                        currentLineNumber, 
+                        currentLine))
                 end
             end
             
@@ -367,6 +381,20 @@ function SyntaxChecker.checkFile(filename)
                         "error", "Lua requires 'then' after the condition in an if statement")
             end
             
+            -- Find incomplete if statements that span multiple lines and are missing 'then'
+            if line:match("^%s*if%s+.+[^%-]-$") and 
+               not line:match("%sthen") and
+               not line:match("%-%-") and 
+               not line:match("{") and
+               not line:match("\\%s*$") then
+                -- Check if the next line contains 'then'
+                local nextLine = codeLines[lineNum + 1]
+                if nextLine and not nextLine:match("^%s*then") then
+                    addIssue(lineNum, line, "If statement likely missing 'then' keyword", 
+                            "error", "Lua requires 'then' after the condition in an if statement")
+                end
+            end
+            
             -- Analyze variable access and assignments
             analyzeVariableAccess(line, lineNum, specialRules)
         end
@@ -374,16 +402,16 @@ function SyntaxChecker.checkFile(filename)
     
     -- Check for unmatched function declarations
     if #functionStack > 0 then
-        for _, lineNum in ipairs(functionStack) do
-            addIssue(lineNum, codeLines[lineNum], "Function declaration not closed with 'end'", 
+        for _, funcLineNum in ipairs(functionStack) do
+            addIssue(funcLineNum, codeLines[funcLineNum], "Function declaration not closed with 'end'", 
                     "error", "Add a matching 'end' statement")
         end
     end
     
     -- Check for unmatched braces
     if #bracketStack > 0 then
-        for _, lineNum in ipairs(bracketStack) do
-            addIssue(lineNum, codeLines[lineNum], "Unmatched opening brace '{'", 
+        for _, braceLineNum in ipairs(bracketStack) do
+            addIssue(braceLineNum, codeLines[braceLineNum], "Unmatched opening brace '{'", 
                     "error", "Add a matching '}' or remove this opening brace")
         end
     end
@@ -401,21 +429,23 @@ function SyntaxChecker.checkFile(filename)
     return #SyntaxChecker.issues == 0
 end
 
+--------------------------------------------------
 -- Scan a directory for Lua files recursively
+--------------------------------------------------
 function SyntaxChecker.scanDirectory(directory)
     local allPassed = true
-    local command
+    local commandStr
     local isWindows = package.config:sub(1, 1) == "\\"
 
     if isWindows then
         -- Windows: Use PowerShell to find .lua files
-        command = 'powershell -Command "Get-ChildItem -Path \'' .. directory .. '\' -Filter *.lua -Recurse | ForEach-Object { $_.FullName }"'
+        commandStr = 'powershell -Command "Get-ChildItem -Path \'' .. directory .. '\' -Filter *.lua -Recurse | ForEach-Object { $_.FullName }"'
     else
         -- Linux/macOS: Use find command
-        command = 'find "' .. directory .. '" -name "*.lua" -type f'
+        commandStr = 'find "' .. directory .. '" -name "*.lua" -type f'
     end
 
-    local handle = io.popen(command)
+    local handle = io.popen(commandStr)
     if not handle then
         print("Error: Unable to execute directory scan command.")
         return false
@@ -426,20 +456,20 @@ function SyntaxChecker.scanDirectory(directory)
 
     -- Sort filenames to process them in a consistent order
     local files = {}
-    for filename in result:gmatch("[^\r\n]+") do
-        filename = filename:gsub("\\", "/") -- Normalize path slashes
+    for filenameStr in result:gmatch("[^\r\n]+") do
+        filenameStr = filenameStr:gsub("\\", "/") -- Normalize path slashes
         
         -- Check if this file should be skipped
         local skipFile = false
         for _, pattern in ipairs(SyntaxChecker.config.ignoreFiles.skip) do
-            if filename:match(pattern) then
+            if filenameStr:match(pattern) then
                 skipFile = true
                 break
             end
         end
         
         if not skipFile then
-            table.insert(files, filename)
+            table.insert(files, filenameStr)
         end
     end
     table.sort(files)
@@ -488,8 +518,8 @@ function SyntaxChecker.scanDirectory(directory)
                     -- Print context if available
                     if issue.context then
                         print("        Context:")
-                        for _, line in ipairs(issue.context) do
-                            print("          " .. line)
+                        for _, contextLine in ipairs(issue.context) do
+                            print("          " .. contextLine)
                         end
                     end
                 end
@@ -518,16 +548,19 @@ function SyntaxChecker.scanDirectory(directory)
     print("\n=== Syntax Check Summary ===")
     if errorCount > 0 then
         print(string.format("❌ Found %d error(s) in %d file(s)", errorCount, filesWithIssues))
-    else if totalIssueCount > 0 then
+    elseif totalIssueCount > 0 then
         print(string.format("⚠️ Found %d warning(s) in %d file(s)", totalIssueCount, filesWithIssues))
     else
         print("✅ All files passed syntax check!")
-    end
     end
 
     return allPassed
 end
 
--- Run the syntax check on current directory
+--------------------------------------------------
+-- Main entry point: Run the syntax check
+--------------------------------------------------
 print("Scanning Lua files for syntax errors...")
 SyntaxChecker.scanDirectory(".")
+
+return SyntaxChecker
