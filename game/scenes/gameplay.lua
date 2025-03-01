@@ -7,17 +7,19 @@
 -- A game over popup menu is displayed when a player's tower is destroyed,
 -- styled similarly to the Settings menu using theme.lua.
 -- Added support for spell targeting and minion weapons
+-- Now using EventBus for AI turns
 
 local GameManager = require("game.managers.gamemanager")
 local DrawSystem = require("game.scenes.gameplay.draw")
 local InputSystem = require("game.scenes.gameplay.input")
-local CombatSystem = require("game.scenes/gameplay.combat")
+local CombatSystem = require("game.scenes.gameplay.combat")
 local BoardRenderer = require("game.ui.boardrenderer")
 local AIManager = require("game.managers.aimanager")
 local Theme = require("game.ui.theme")
 local CardRenderer = require("game.ui.cardrenderer")
 local Animation = require("game.managers.animation")  -- Import our Animation manager
 local EffectManager = require("game.managers.effectmanager") -- Added for target checking
+local EventBus = require("game.eventbus") -- Added for event-based architecture
 
 -- Local helper function to draw a themed button (similar to settings.lua)
 local function drawThemedButton(text, x, y, width, height, isHovered, isSelected)
@@ -88,9 +90,12 @@ function Gameplay:new(changeSceneCallback, selectedDeck, selectedBoard, aiOppone
     self.selectedBoard = selectedBoard
     self.aiOpponent = aiOpponent or false
 
-    self.gameManager = GameManager:new(selectedDeck, selectedBoard)
+    self.gameManager = GameManager:new(selectedDeck, selectedBoard, self.aiOpponent)
     self.changeSceneCallback = changeSceneCallback
     self.selectedBoard = selectedBoard
+
+    -- Initialize event subscriptions storage
+    self.eventSubscriptions = {}
 
     if self.aiOpponent then
         self.aiManager = AIManager:new(self.gameManager)
@@ -141,9 +146,6 @@ function Gameplay:new(changeSceneCallback, selectedDeck, selectedBoard, aiOppone
         self.gameOverWinner = winner
     end
 
-    self.aiTurnTimer = 0
-    self.aiTurnDelay = 0.5
-
     -- Properties for drag-and-drop
     self.draggedCard = nil
     self.draggedCardIndex = nil
@@ -153,8 +155,76 @@ function Gameplay:new(changeSceneCallback, selectedDeck, selectedBoard, aiOppone
     self.pendingEffectCard = nil
     self.pendingEffectCardIndex = nil
     self.validTargets = {}
+    
+    -- Setup event subscriptions
+    self:initEventSubscriptions()
+    
+    -- Start the first turn to initialize the game
+    self.gameManager:startTurn()
 
     return self
+end
+
+--------------------------------------------------
+-- initEventSubscriptions():
+-- Set up all event listeners for the Gameplay scene.
+--------------------------------------------------
+function Gameplay:initEventSubscriptions()
+    -- Clear any existing subscriptions
+    self:clearEventSubscriptions()
+    
+    -- If AI opponent is enabled, subscribe to turn events
+    if self.aiOpponent then
+        -- Listen for turn started events to trigger AI turn
+        table.insert(self.eventSubscriptions, EventBus.subscribe(
+            EventBus.Events.TURN_STARTED,
+            function(player)
+                if player == self.gameManager.player2 then
+                    -- Add a small delay before triggering AI turn
+                    self.aiTurnTimer = 0.5
+                end
+            end,
+            "GameplayScene-TurnHandler"
+        ))
+    end
+    
+    -- Subscribe to card events
+    table.insert(self.eventSubscriptions, EventBus.subscribe(
+        EventBus.Events.CARD_PLAYED,
+        function(player, card)
+            -- Add any card played effects
+        end,
+        "GameplayScene-CardHandler"
+    ))
+    
+    -- Subscribe to minion events
+    table.insert(self.eventSubscriptions, EventBus.subscribe(
+        EventBus.Events.MINION_DIED,
+        function(minion, killer)
+            -- Add any special effects for minion death
+        end,
+        "GameplayScene-MinionHandler"
+    ))
+    
+    -- Subscribe to tower events
+    table.insert(self.eventSubscriptions, EventBus.subscribe(
+        EventBus.Events.TOWER_DESTROYED,
+        function(tower, destroyer)
+            -- Add any special effects for tower destruction
+        end,
+        "GameplayScene-TowerHandler"
+    ))
+end
+
+--------------------------------------------------
+-- clearEventSubscriptions():
+-- Clean up event subscriptions to prevent memory leaks.
+--------------------------------------------------
+function Gameplay:clearEventSubscriptions()
+    for _, sub in ipairs(self.eventSubscriptions) do
+        EventBus.unsubscribe(sub)
+    end
+    self.eventSubscriptions = {}
 end
 
 function Gameplay:update(dt)
@@ -166,11 +236,14 @@ function Gameplay:update(dt)
         if self.bannerTimer < 0 then self.bannerTimer = 0 end
     end
 
+    -- Handle AI turns with traditional timer (will migrate to events fully later)
     if self.aiOpponent and self.gameManager.currentPlayer == 2 and not self.showGameOverPopup then
-        self.aiTurnTimer = self.aiTurnTimer - dt
-        if self.aiTurnTimer <= 0 then
-            self.aiTurnTimer = self.aiTurnDelay
-            self.aiManager:takeTurn()
+        if self.aiTurnTimer and self.aiTurnTimer > 0 then
+            self.aiTurnTimer = self.aiTurnTimer - dt
+            if self.aiTurnTimer <= 0 then
+                -- Trigger the AI turn via an event
+                EventBus.publish(EventBus.Events.AI_TURN_STARTED, self.gameManager.player2)
+            end
         end
     end
 
@@ -186,6 +259,9 @@ function Gameplay:update(dt)
     if self.pendingEffect then
         self:updateValidTargets()
     end
+    
+    -- Process EventBus events
+    EventBus.update(dt)
 end
 
 -- Updated function to filter valid targets based on effect/card type
@@ -464,6 +540,9 @@ function Gameplay:mousepressed(x, y, button, istouch, presses)
                 -- Remove the card from hand (it's already been removed from the hand array)
                 local currentPlayer = self.gameManager:getCurrentPlayer()
                 currentPlayer.manaCrystals = currentPlayer.manaCrystals - self.pendingEffectCard.cost
+                
+                -- Publish card played event
+                EventBus.publish(EventBus.Events.CARD_PLAYED, currentPlayer, self.pendingEffectCard)
             else
                 -- If the effect failed to apply, put the card back in hand
                 table.insert(
@@ -550,9 +629,6 @@ end
 
 function Gameplay:endTurn()
     self.gameManager:endTurn()
-    if self.aiOpponent and self.gameManager.currentPlayer == 2 then
-        self.aiTurnTimer = self.aiTurnDelay
-    end
 end
 
 function Gameplay:keypressed(key)
@@ -578,6 +654,21 @@ end
 
 function Gameplay:resolveAttack(attacker, target)
     CombatSystem.resolveAttack(self, attacker, target)
+end
+
+--------------------------------------------------
+-- Cleanup function to properly dispose resources
+--------------------------------------------------
+function Gameplay:destroy()
+    -- Clean up our event subscriptions
+    self:clearEventSubscriptions()
+    
+    -- Clean up AI manager if it exists
+    if self.aiManager then
+        if self.aiManager.destroy then
+            self.aiManager:destroy()
+        end
+    end
 end
 
 return Gameplay

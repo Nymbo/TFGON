@@ -2,11 +2,13 @@
 -- Updated to handle multiple towers. AI will pick "the first tower"
 -- in the array for any tower-related logic, or skip if none.
 -- A more advanced approach would pick the "closest tower" or "lowest HP tower," etc.
+-- Now using EventBus architecture for better integration with the game.
 
 local AIManager = {}
 AIManager.__index = AIManager
 
 local Combat = require("game.scenes.gameplay.combat")
+local EventBus = require("game.eventbus")
 
 --------------------------------------------------
 -- Helper: getFirstTower
@@ -53,7 +55,64 @@ function AIManager:new(gameManager)
         mana_efficiency = 0.6
     }
     self:setDifficulty(self.difficulty)
+    
+    -- Initialize event subscriptions
+    self:initEventSubscriptions()
+    
     return self
+end
+
+--------------------------------------------------
+-- initEventSubscriptions():
+-- Set up all the event listeners for the AI.
+--------------------------------------------------
+function AIManager:initEventSubscriptions()
+    self.eventSubscriptions = {}
+    
+    -- Subscribe to AI turn start event
+    table.insert(self.eventSubscriptions, EventBus.subscribe(
+        EventBus.Events.AI_TURN_STARTED,
+        function(player)
+            self:executeTurn(player)
+        end,
+        "AIManager"
+    ))
+    
+    -- Subscribe to AI action events
+    table.insert(self.eventSubscriptions, EventBus.subscribe(
+        EventBus.Events.AI_ACTION_PERFORMED,
+        function(actionType, player)
+            if actionType == "playCards" then
+                self:playCards(player)
+            elseif actionType == "moveMinions" then
+                self:moveMinions(player)
+            elseif actionType == "attackWithMinions" then
+                self:attackWithMinions(player)
+            end
+        end,
+        "AIActionHandler"
+    ))
+    
+    -- Subscribe to AI turn end event
+    table.insert(self.eventSubscriptions, EventBus.subscribe(
+        EventBus.Events.AI_TURN_ENDED,
+        function(player)
+            self.gameManager:endTurn()
+        end,
+        "AITurnEndHandler"
+    ))
+end
+
+--------------------------------------------------
+-- destroy():
+-- Clean up event subscriptions when AI is no longer needed.
+--------------------------------------------------
+function AIManager:destroy()
+    -- Clean up subscriptions to prevent memory leaks
+    for _, sub in ipairs(self.eventSubscriptions) do
+        EventBus.unsubscribe(sub)
+    end
+    self.eventSubscriptions = {}
 end
 
 function AIManager:setDifficulty(difficulty)
@@ -80,8 +139,24 @@ function AIManager:setDifficulty(difficulty)
 end
 
 --------------------------------------------------
+-- executeTurn(player):
+-- Main function for the AI's entire turn, now event-based.
+--------------------------------------------------
+function AIManager:executeTurn(player)
+    -- Introduce delay between actions for more natural pacing
+    EventBus.publishDelayed(EventBus.Events.AI_ACTION_PERFORMED, 0.3, "playCards", player)
+    EventBus.publishDelayed(EventBus.Events.AI_ACTION_PERFORMED, 1.0, "moveMinions", player)
+    EventBus.publishDelayed(EventBus.Events.AI_ACTION_PERFORMED, 1.8, "attackWithMinions", player)
+    EventBus.publishDelayed(EventBus.Events.AI_TURN_ENDED, 2.5, player)
+    
+    -- Optionally publish event when AI starts thinking for UI feedback
+    EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "AIThinking")
+end
+
+--------------------------------------------------
 -- takeTurn():
--- Main function for the AI's entire turn
+-- Legacy method kept for backward compatibility during refactoring.
+-- Will be removed once all code is migrated to use events.
 --------------------------------------------------
 function AIManager:takeTurn()
     local gm = self.gameManager
@@ -123,6 +198,9 @@ function AIManager:playCards(aiPlayer)
                 if bestSpot then
                     local success = gm:summonMinion(aiPlayer, card, cardIndex, bestSpot.x, bestSpot.y)
                     if success then
+                        -- Publish an event for minion summoned
+                        EventBus.publish(EventBus.Events.MINION_SUMMONED, aiPlayer, card, bestSpot.x, bestSpot.y)
+                        
                         -- Adjust indices in sortedHand
                         for j, info in ipairs(sortedHand) do
                             if info.index > cardIndex then
@@ -132,10 +210,15 @@ function AIManager:playCards(aiPlayer)
                     end
                 end
             elseif card.cardType == "Spell" or card.cardType == "Weapon" then
-                gm:playCardFromHand(aiPlayer, cardIndex)
-                for j, info in ipairs(sortedHand) do
-                    if info.index > cardIndex then
-                        info.index = info.index - 1
+                local success = gm:playCardFromHand(aiPlayer, cardIndex)
+                if success then
+                    -- Publish card played event
+                    EventBus.publish(EventBus.Events.CARD_PLAYED, aiPlayer, card)
+                    
+                    for j, info in ipairs(sortedHand) do
+                        if info.index > cardIndex then
+                            info.index = info.index - 1
+                        end
                     end
                 end
             end
@@ -267,8 +350,12 @@ function AIManager:moveMinions(aiPlayer)
         local fromX, fromY = mInfo.x, mInfo.y
         local bestMove = self:findBestMinionMove(minion, fromX, fromY)
         if bestMove then
-            board:moveMinion(fromX, fromY, bestMove.x, bestMove.y)
-            minion.hasMoved = true
+            local success = board:moveMinion(fromX, fromY, bestMove.x, bestMove.y)
+            if success then
+                minion.hasMoved = true
+                -- Publish minion moved event
+                EventBus.publish(EventBus.Events.MINION_MOVED, minion, fromX, fromY, bestMove.x, bestMove.y)
+            end
         end
     end
 end
@@ -425,9 +512,13 @@ function AIManager:attackWithMinions(aiPlayer)
         local bestAttack = self:findBestAttackTarget(attacker, x, y)
         if bestAttack then
             if bestAttack.type == "minion" then
-                Combat.resolveAttack(gm, {type = "minion", minion = attacker}, {type = "minion", minion = bestAttack.target})
+                local result = Combat.resolveAttack(gm, {type = "minion", minion = attacker}, {type = "minion", minion = bestAttack.target})
+                -- Publish attack event
+                EventBus.publish(EventBus.Events.MINION_ATTACKED, attacker, bestAttack.target)
             elseif bestAttack.type == "tower" then
-                Combat.resolveAttack(gm, {type = "minion", minion = attacker}, {type = "tower", tower = bestAttack.target})
+                local result = Combat.resolveAttack(gm, {type = "minion", minion = attacker}, {type = "tower", tower = bestAttack.target})
+                -- Publish tower attack event
+                EventBus.publish(EventBus.Events.TOWER_DAMAGED, bestAttack.target, attacker, attacker.attack)
             end
         end
     end

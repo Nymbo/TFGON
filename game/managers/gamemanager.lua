@@ -5,12 +5,14 @@
 --   * isTileOccupiedByTower(x, y) returns the specific tower at that tile (if any).
 --   * Summoning minions logic remains the same.
 --   * Now with support for targeting effects
+--   * Integrated with EventBus for better decoupling
 
 local Player = require("game.core.player")
 local Board = require("game.core.board")
 local EffectManager = require("game.managers.effectmanager")
 local Deck = require("game/core/deck")
 local Tower = require("game.core.tower")  -- Tower module
+local EventBus = require("game.eventbus")  -- Added for event-based architecture
 
 local GameManager = {}
 GameManager.__index = GameManager
@@ -116,6 +118,12 @@ function GameManager:new(selectedDeck, selectedBoard, isAIOpponent)
     self.onGameOver = nil
     -- Flag to indicate game is over
     self.gameOver = false
+    
+    -- Initialize event subscriptions
+    self.eventSubscriptions = {}
+    
+    -- Publish game initialized event
+    EventBus.publish(EventBus.Events.GAME_INITIALIZED, self)
 
     return self
 end
@@ -132,6 +140,8 @@ function GameManager:update(dt)
         for i = #self.player1.towers, 1, -1 do
             local t = self.player1.towers[i]
             if t.hp <= 0 then
+                -- Publish tower destroyed event before removing
+                EventBus.publish(EventBus.Events.TOWER_DESTROYED, t, nil)
                 table.remove(self.player1.towers, i)
             end
         end
@@ -140,6 +150,8 @@ function GameManager:update(dt)
         for i = #self.player2.towers, 1, -1 do
             local t = self.player2.towers[i]
             if t.hp <= 0 then
+                -- Publish tower destroyed event before removing
+                EventBus.publish(EventBus.Events.TOWER_DESTROYED, t, nil)
                 table.remove(self.player2.towers, i)
             end
         end
@@ -165,6 +177,9 @@ end
 -- Switches the current player and starts their turn.
 --------------------------------------------------
 function GameManager:endTurn()
+    -- Publish turn ended event
+    EventBus.publish(EventBus.Events.TURN_ENDED, self:getCurrentPlayer())
+    
     if self.currentPlayer == 1 then
         self.currentPlayer = 2
     else
@@ -182,8 +197,23 @@ function GameManager:startTurn()
     if player.maxManaCrystals < 10 then
         player.maxManaCrystals = player.maxManaCrystals + 1
     end
+    
+    -- Store old mana value for event
+    local oldMana = player.manaCrystals
     player.manaCrystals = player.maxManaCrystals
+    
+    -- Publish mana changed event
+    EventBus.publish(EventBus.Events.PLAYER_MANA_CHANGED, player, oldMana, player.manaCrystals)
+    
+    -- Draw a card using the player's method instead of accessing deck directly
     player:drawCard(1)
+    
+    -- Publish card drawn event for the most recently drawn card
+    if #player.hand > 0 then
+        local lastCard = player.hand[#player.hand]
+        EventBus.publish(EventBus.Events.CARD_DRAWN, player, lastCard)
+    end
+    
     player.heroAttacked = false
 
     self.board:forEachMinion(function(minion, x, y)
@@ -194,6 +224,7 @@ function GameManager:startTurn()
         end
     end)
 
+    -- Maintain compatibility with existing callbacks
     if self.onTurnStart then
         if self.currentPlayer == 1 then
             self.onTurnStart("player1")
@@ -201,6 +232,9 @@ function GameManager:startTurn()
             self.onTurnStart("player2")
         end
     end
+    
+    -- Publish turn started event with the player object
+    EventBus.publish(EventBus.Events.TURN_STARTED, player)
 end
 
 --------------------------------------------------
@@ -270,8 +304,19 @@ function GameManager:playCardFromHand(player, cardIndex)
         end
     end
     
+    -- Store old mana for event
+    local oldMana = player.manaCrystals
     player.manaCrystals = player.manaCrystals - card.cost
-    table.remove(player.hand, cardIndex)
+    
+    -- Publish mana changed event
+    EventBus.publish(EventBus.Events.PLAYER_MANA_CHANGED, player, oldMana, player.manaCrystals)
+    
+    -- Remove the card from hand
+    local playedCard = table.remove(player.hand, cardIndex)
+    
+    -- Publish card played event
+    EventBus.publish(EventBus.Events.CARD_PLAYED, player, playedCard)
+    
     return true
 end
 
@@ -309,9 +354,26 @@ function GameManager:summonMinion(player, card, cardIndex, x, y)
     }
     local success = self.board:placeMinion(minion, x, y)
     if success then
+        -- Trigger battlecry effects
         EffectManager.triggerBattlecry(card, self, player)
+        
+        -- Publish battlecry event if applicable
+        if card.battlecry then
+            EventBus.publish(EventBus.Events.BATTLECRY_TRIGGERED, minion, player)
+        end
+        
+        -- Store old mana for event
+        local oldMana = player.manaCrystals
+        
+        -- Update player's hand and mana
         table.remove(player.hand, cardIndex)
         player.manaCrystals = player.manaCrystals - card.cost
+        
+        -- Publish related events
+        EventBus.publish(EventBus.Events.MINION_SUMMONED, player, minion, x, y)
+        EventBus.publish(EventBus.Events.CARD_PLAYED, player, card)
+        EventBus.publish(EventBus.Events.PLAYER_MANA_CHANGED, player, oldMana, player.manaCrystals)
+        
         return true
     else
         print("Failed to place minion: spawn zone full!")
@@ -348,9 +410,13 @@ function GameManager:endGame()
         print("The match ends in a draw.")
     end
 
+    -- Call legacy callback for backward compatibility
     if self.onGameOver then
         self.onGameOver(winner)
     end
+    
+    -- Publish game ended event
+    EventBus.publish(EventBus.Events.GAME_ENDED, winner)
 end
 
 --------------------------------------------------
@@ -361,6 +427,18 @@ end
 function GameManager:getTowerAt(x, y)
     local tower = self:isTileOccupiedByTower(x, y)
     return tower
+end
+
+--------------------------------------------------
+-- destroy():
+-- Clean up resources and subscriptions.
+--------------------------------------------------
+function GameManager:destroy()
+    -- Clean up event subscriptions
+    for _, sub in ipairs(self.eventSubscriptions) do
+        EventBus.unsubscribe(sub)
+    end
+    self.eventSubscriptions = {}
 end
 
 return GameManager
