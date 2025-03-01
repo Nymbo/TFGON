@@ -323,6 +323,7 @@ end
 --------------------------------------------------
 -- summonMinion(player, card, cardIndex, x, y):
 -- Places a minion on the board if valid.
+-- Now publishes events for minion summoning and card playing.
 --------------------------------------------------
 function GameManager:summonMinion(player, card, cardIndex, x, y)
     local validSpawnRow = (player == self.player1) and self.board.rows or 1
@@ -338,6 +339,8 @@ function GameManager:summonMinion(player, card, cardIndex, x, y)
         print("Selected tile is not empty!")
         return false
     end
+    
+    -- Create minion from card data
     local minion = {
         name = card.name,
         attack = card.attack,
@@ -352,6 +355,8 @@ function GameManager:summonMinion(player, card, cardIndex, x, y)
         battlecry = card.battlecry,
         deathrattle = card.deathrattle
     }
+    
+    -- Place on board
     local success = self.board:placeMinion(minion, x, y)
     if success then
         -- Trigger battlecry effects
@@ -369,9 +374,9 @@ function GameManager:summonMinion(player, card, cardIndex, x, y)
         table.remove(player.hand, cardIndex)
         player.manaCrystals = player.manaCrystals - card.cost
         
-        -- Publish related events
-        EventBus.publish(EventBus.Events.MINION_SUMMONED, player, minion, x, y)
+        -- Publish related events in logical order
         EventBus.publish(EventBus.Events.CARD_PLAYED, player, card)
+        EventBus.publish(EventBus.Events.MINION_SUMMONED, player, minion, x, y)
         EventBus.publish(EventBus.Events.PLAYER_MANA_CHANGED, player, oldMana, player.manaCrystals)
         
         return true

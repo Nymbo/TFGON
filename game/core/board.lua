@@ -1,7 +1,10 @@
 -- game/core/board.lua
 -- This module now creates boards based on provided configuration.
+-- Integrated with EventBus for movement events.
 local Board = {}
 Board.__index = Board
+
+local EventBus = require("game/eventbus")  -- Added EventBus import
 
 function Board:new(config)
     local self = setmetatable({}, Board)
@@ -43,9 +46,17 @@ end
 function Board:moveMinion(fromX, fromY, toX, toY)
     if self.tiles[fromY] and self.tiles[fromY][fromX] and self:isEmpty(toX, toY) then
         local minion = self.tiles[fromY][fromX]
+        
+        -- Store old position for event
+        local oldPosition = { x = fromX, y = fromY }
+        
+        -- Update board state
         self.tiles[fromY][fromX] = nil
         self.tiles[toY][toX] = minion
         minion.position = { x = toX, y = toY }
+        
+        -- Publish movement event with before/after positions
+        EventBus.publish(EventBus.Events.MINION_MOVED, minion, oldPosition, minion.position)
         return true
     end
     return false

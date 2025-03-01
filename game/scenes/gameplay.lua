@@ -2,12 +2,12 @@
 -- Main gameplay scene.
 -- Now accepts a selected deck for player 1 via its constructor.
 -- Also accepts a selected board configuration.
--- Displays a banner at the start of each turn.
+-- Displays a banner at the start of each turn using dedicated BannerSystem.
 -- Includes AI opponent functionality.
 -- A game over popup menu is displayed when a player's tower is destroyed,
 -- styled similarly to the Settings menu using theme.lua.
 -- Added support for spell targeting and minion weapons
--- Now using EventBus for AI turns
+-- Now using EventBus for AI turns and banner system
 
 local GameManager = require("game.managers.gamemanager")
 local DrawSystem = require("game.scenes.gameplay.draw")
@@ -20,6 +20,7 @@ local CardRenderer = require("game.ui.cardrenderer")
 local Animation = require("game.managers.animation")  -- Import our Animation manager
 local EffectManager = require("game.managers.effectmanager") -- Added for target checking
 local EventBus = require("game.eventbus") -- Added for event-based architecture
+local BannerSystem = require("game.ui.bannersystem") -- Added BannerSystem
 
 -- Local helper function to draw a themed button (similar to settings.lua)
 local function drawThemedButton(text, x, y, width, height, isHovered, isSelected)
@@ -119,24 +120,13 @@ function Gameplay:new(changeSceneCallback, selectedDeck, selectedBoard, aiOppone
     self.endTurnHovered = false
     self.selectedMinion = nil
 
-    self.bannerImage = nil
-    self.bannerText = ""
-    self.bannerTimer = 0
-    self.bannerDuration = 1.5
+    -- Create banner system
+    self.bannerSystem = BannerSystem:new()
 
-    -- Initialize bannerFont to avoid nil error.
-    self.bannerFont = love.graphics.newFont("assets/fonts/InknutAntiqua-Regular.ttf", 16)
-
+    -- Legacy callback to maintain compatibility
     self.gameManager.onTurnStart = function(whichPlayer)
-        if whichPlayer == "player1" then
-            self.bannerImage = love.graphics.newImage("assets/images/Ribbon_Blue_3Slides.png")
-            self.bannerText = "YOUR TURN"
-        else
-            self.bannerImage = love.graphics.newImage("assets/images/Ribbon_Red_3Slides.png")
-            local bannerMsg = self.aiOpponent and "AI OPPONENT'S TURN" or "OPPONENT'S TURN"
-            self.bannerText = bannerMsg
-        end
-        self.bannerTimer = self.bannerDuration
+        -- This is kept for backward compatibility but no longer sets banner properties
+        -- Banner display is now managed through events
     end
 
     self.showGameOverPopup = false
@@ -172,6 +162,19 @@ end
 function Gameplay:initEventSubscriptions()
     -- Clear any existing subscriptions
     self:clearEventSubscriptions()
+    
+    -- Subscribe to turn events to display banners
+    table.insert(self.eventSubscriptions, EventBus.subscribe(
+        EventBus.Events.TURN_STARTED,
+        function(player)
+            local bannerType = (player == self.gameManager.player1) and "player" or "opponent"
+            local text = (player == self.gameManager.player1) and "YOUR TURN" or 
+                       (self.aiOpponent and "AI OPPONENT'S TURN" or "OPPONENT'S TURN")
+            
+            EventBus.publish(EventBus.Events.BANNER_DISPLAYED, bannerType, text)
+        end,
+        "GameplayScene-BannerHandler"
+    ))
     
     -- If AI opponent is enabled, subscribe to turn events
     if self.aiOpponent then
@@ -231,10 +234,8 @@ function Gameplay:update(dt)
     self.gameManager:update(dt)
     self.endTurnHovered = InputSystem.checkEndTurnHover(self)
 
-    if self.bannerTimer > 0 then
-        self.bannerTimer = self.bannerTimer - dt
-        if self.bannerTimer < 0 then self.bannerTimer = 0 end
-    end
+    -- Update banner system
+    self.bannerSystem:update(dt)
 
     -- Handle AI turns with traditional timer (will migrate to events fully later)
     if self.aiOpponent and self.gameManager.currentPlayer == 2 and not self.showGameOverPopup then
@@ -360,35 +361,8 @@ function Gameplay:draw()
         self:drawTargetingIndicators()
     end
 
-    if self.bannerTimer > 0 and self.bannerImage then
-        local boardX, boardY = BoardRenderer.getBoardPosition()
-        local TILE_SIZE = BoardRenderer.getTileSize()
-        local boardWidth = TILE_SIZE * self.gameManager.board.cols
-        local boardHeight = TILE_SIZE * self.gameManager.board.rows
-        local cx = boardX + boardWidth / 2
-        local cy = boardY + boardHeight / 2
-
-        local iw = self.bannerImage:getWidth()
-        local ih = self.bannerImage:getHeight()
-        local scale = 2
-        local scaledWidth = iw * scale
-        local scaledHeight = ih * scale
-
-        love.graphics.setColor(1, 1, 1, 1)
-        love.graphics.draw(self.bannerImage, cx - (scaledWidth / 2), cy - (scaledHeight / 2), 0, scale, scale)
-
-        local oldFont = love.graphics.getFont()
-        love.graphics.setFont(self.bannerFont)
-        love.graphics.setColor(1, 1, 1, 1)
-        local textX = cx - (scaledWidth / 2)
-        local textY = cy - (scaledHeight / 2) + (scaledHeight * 0.3) - 5
-        love.graphics.printf(self.bannerText, textX + 1, textY, scaledWidth, "center")
-        love.graphics.printf(self.bannerText, textX - 1, textY, scaledWidth, "center")
-        love.graphics.printf(self.bannerText, textX, textY + 1, scaledWidth, "center")
-        love.graphics.printf(self.bannerText, textX, textY - 1, scaledWidth, "center")
-        love.graphics.printf(self.bannerText, textX, textY, scaledWidth, "center")
-        love.graphics.setFont(oldFont)
-    end
+    -- Draw the banner using the banner system
+    self.bannerSystem:draw()
 
     if self.showGameOverPopup then
         self:drawGameOverPopup()
@@ -662,6 +636,11 @@ end
 function Gameplay:destroy()
     -- Clean up our event subscriptions
     self:clearEventSubscriptions()
+    
+    -- Clean up banner system
+    if self.bannerSystem then
+        self.bannerSystem:destroy()
+    end
     
     -- Clean up AI manager if it exists
     if self.aiManager then

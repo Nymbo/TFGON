@@ -1,6 +1,8 @@
 -- game/core/player.lua
 -- Defines a Player. Now accepts an optional custom deck.
+-- Integrated with EventBus for a more decoupled architecture
 local Deck = require("game/core/deck")
+local EventBus = require("game/eventbus")  -- Added EventBus import
 local Player = {}
 Player.__index = Player
 
@@ -23,19 +25,29 @@ function Player:new(name, customDeck)
     self.manaCrystals = 0
     self.weapon = nil
     self.heroAttacked = false
+    
+    -- Initialize towers array (multiple towers per player)
+    self.towers = {}
+    
     return self
 end
 
 --------------------------------------------------
 -- drawCard: Draws 'count' cards from the deck.
+-- Now publishes events for card drawing and deck emptying.
 --------------------------------------------------
 function Player:drawCard(count)
     for i = 1, count do
         local card = self.deck:draw()
         if card then
+            -- First modify the state
             table.insert(self.hand, card)
+            
+            -- Then publish the event
+            EventBus.publish(EventBus.Events.CARD_DRAWN, self, card)
         else
-            -- Handle fatigue here if desired
+            -- Could publish a deck empty event
+            EventBus.publish(EventBus.Events.DECK_EMPTY, self)
         end
     end
 end

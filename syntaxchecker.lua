@@ -1,5 +1,6 @@
 -- syntaxchecker.lua
--- A utility to scan Lua files for common syntax errors with improved context awareness
+-- An improved utility to scan Lua files for common syntax errors with better context awareness
+-- Now with better detection of valid arithmetic operations vs string concatenation
 
 local SyntaxChecker = {}
 
@@ -46,7 +47,7 @@ SyntaxChecker.config = {
             -- From project
             "Animation", "BoardRegistry", "CardRenderer", "Combat", "DeckManager",
             "DrawSystem", "EffectManager", "GameManager", "InputSystem",
-            "SceneManager", "Theme", "Tooltip"
+            "SceneManager", "Theme", "Tooltip", "EventBus", "EventMonitor"
         },
         -- Valid table definitions
         tableContext = {
@@ -62,6 +63,23 @@ SyntaxChecker.config = {
             -- Add common class/object initialization patterns here
             "local%s+[%w_]+%s*=%s*{",
             "local%s+[%w_]+%s*=%s*require"
+        },
+        -- Valid arithmetic operations
+        mathOperations = {
+            "=%s*[%w_.%(%)]+%s*%+%s*%d", -- var = something + number
+            "=%s*%d+%s*%+%s*[%w_.%(%)]+", -- var = number + something
+            "%(%s*[%w_.%(%)]+%s*%+%s*%d", -- (something + number)
+            "%(%s*%d+%s*%+%s*[%w_.%(%)]+", -- (number + something)
+            "return%s+[%w_.%(%)]+%s*%+%s*%d", -- return something + number
+            "return%s+%d+%s*%+%s*[%w_.%(%)]+", -- return number + something
+            "%w+%s*%+%s*=", -- increment operation: i += 1
+            -- Time related patterns (common in LÖVE games)
+            "getTime%(%s*%)%s*%+", -- love.timer.getTime() + something
+            "dt%s*%*%s*[%d.]+%s*%+", -- dt * number + something
+            "%[%s*[%w_]+%s*%+%s*%d+%s*%]", -- array[index + 1] style access
+            "for%s+[%w_]+%s*=%s*[%w_]+%s*%+%s*%d+", -- for loops: for i = start + 1
+            "i%s*=%s*i%s*%+%s*%d", -- loop increments: i = i + 1
+            "%w+%s*=%s*%w+%s*%+%s*#" -- Adding table lengths: x = y + #table
         }
     }
 }
@@ -115,13 +133,64 @@ local function isInitPattern(line)
     return false
 end
 
+local function isValidMathOperation(line)
+    -- First check for common math operation patterns
+    for _, pattern in ipairs(SyntaxChecker.config.safePatterns.mathOperations) do
+        if line:match(pattern) then return true end
+    end
+    
+    -- Look for incrementing/counting patterns: count = count + 1, index = index + offset
+    if line:match("[%w_]+%s*=%s*[%w_]+%s*%+%s*%d") or
+       line:match("[%w_]+%s*=%s*[%w_]+%s*%+%s*[%w_]+") then
+        return true
+    end
+    
+    -- Detect math operations with math functions
+    if line:match("math%.") and line:match("%+") then
+        return true
+    end
+    
+    -- Check for operations in function calls: func(a + b)
+    if line:match("[%w_]+%s*%b()") and line:match("%+") then
+        return true
+    end
+    
+    return false
+end
+
 local function isStringConcatenation(line)
-    -- Look for + operator not between numbers or in math operations
-    return line:match("[^%d%.]%s*%+%s*[^%d%.]") and 
-           not line:match("^%s*local%s+[%w_]+%s*=%s*[%d%.]+%s*%+") and
-           not line:match("[%w_]+%s*=%s*[%d%.]+%s*%+") and
-           not line:match("return%s+[%d%.]+%s*%+") and
-           not line:match("math%.") -- Skip math operations
+    -- Skip comments
+    if line:match("^%s*%-%-") then
+        return false
+    end
+    
+    -- Skip lines with valid math operations
+    if isValidMathOperation(line) then
+        return false
+    end
+    
+    -- Look for + operator that's likely concatenating strings
+    if line:match("['\"].-['\"]%s*%+") or -- "string" +
+       line:match("%+%s*['\"].-['\"]") or -- + "string"
+       line:match("[%w_]%s*%+%s*['\"]") or -- var + "string"
+       line:match("['\"]%s*%+%s*[%w_]") then -- "string" + var
+        return true
+    end
+    
+    -- Check for other non-numeric + operations that aren't caught by math patterns
+    if line:match("%+") and 
+       not line:match("%d%s*%+%s*%d") and -- not number + number
+       not line:match("%.%.") and -- doesn't already use string concat
+       not line:match("[%+%-%*/%%]%s*%+") then -- not part of a compound math expression (+, -, *, /, %)
+        
+        -- Further check to avoid false positives in complex expressions
+        if not (line:match("function") or line:match("return%s+function")) then
+            -- If we reach here, it's likely a string concatenation using +
+            return true
+        end
+    end
+    
+    return false
 end
 
 local function isTableFieldDef(line, contextStack)
@@ -199,7 +268,7 @@ local function analyzeSyntax(line, lineNum)
     end
 
     -- C-style comments
-    if line:match("//") then
+    if line:match("//") and not line:match("http://") and not line:match("https://") then
         addIssue(lineNum, line, "C-style comment detected (use -- instead)", "error")
     end
 
@@ -224,6 +293,14 @@ local function analyzeSyntax(line, lineNum)
        not line:match("%-%-") and
        not line:match("{") then
         addIssue(lineNum, line, "Missing 'then' in if statement", "error")
+    end
+    
+    -- Check for braces vs "end" keyword
+    if line:match("[^-]%s*}%s*$") and 
+       not line:match("^%s*%-%-") and
+       not line:match("=%s*function.*}") and
+       not line:match("=%s*{.*}") then
+        addIssue(lineNum, line, "JavaScript-style closing brace (use 'end' keyword in Lua)", "error")
     end
 end
 
@@ -445,10 +522,10 @@ function SyntaxChecker.scanDirectory(directory)
     return allPassed
 end
 
---------------------------------------------------
--- Run the syntax check
---------------------------------------------------
-print("Scanning Lua files for syntax errors...")
-SyntaxChecker.scanDirectory(".")
+-- Only run if executed directly
+if arg and arg[0]:match("syntaxchecker.lua") then
+    print("Scanning Lua files for syntax errors...")
+    SyntaxChecker.scanDirectory(".")
+end
 
 return SyntaxChecker

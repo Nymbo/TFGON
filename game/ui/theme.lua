@@ -115,7 +115,7 @@ Theme.animations = {
     attackAnimationDuration = 0.2,
     fadeInDuration = 0.3,
     fadeOutDuration = 0.3,
-    easing = "outQuad",       -- Example easing function (we'd need to implement this)
+    easing = "outQuad"       -- Example easing function (we'd need to implement this)
 }
 
 return Theme
