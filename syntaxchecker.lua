@@ -1,6 +1,6 @@
 -- syntaxchecker.lua
--- An improved utility to scan Lua files for common syntax errors with better context awareness
--- Now with better detection of valid arithmetic operations vs string concatenation
+-- A simplified utility to scan Lua files for actual syntax errors only.
+-- Ignores style warnings like "missing local", "string concatenation", etc.
 
 local SyntaxChecker = {}
 
@@ -19,67 +19,6 @@ SyntaxChecker.config = {
                 ignoreNilAccess = true,
                 ignoreLocalMissing = true
             }
-        }
-    },
-    
-    -- Known good patterns that shouldn't trigger warnings
-    safePatterns = {
-        -- Common module paths
-        moduleAccess = {
-            "^game/",
-            "^data/",
-            "^conf",
-            "^main",
-            "%.lua$"
-        },
-        -- Standard library globals
-        knownGlobals = {
-            -- Lua standard
-            "ipairs", "pairs", "pcall", "xpcall", "error", "assert", "print",
-            "tonumber", "tostring", "type", "select", "unpack", "require",
-            "loadfile", "load", "rawget", "rawset", "rawequal", "setmetatable",
-            "getmetatable", "next", "table", "string", "math", "io", "os",
-            "debug", "bit", "arg", "package", "coroutine", "_G", "_VERSION",
-            -- LÖVE standard
-            "love",
-            -- Common LÖVE patterns
-            "class", "Class", "Object", "Vector", "Rectangle",
-            -- From project
-            "Animation", "BoardRegistry", "CardRenderer", "Combat", "DeckManager",
-            "DrawSystem", "EffectManager", "GameManager", "InputSystem",
-            "SceneManager", "Theme", "Tooltip", "EventBus", "EventMonitor"
-        },
-        -- Valid table definitions
-        tableContext = {
-            "{%s*$",
-            "=%s*{",
-            "return%s*{",
-            "function%s*%b()%s*$"
-        },
-        -- Known safe initializations
-        init = {
-            "setmetatable%({},",
-            "self%s*=%s*setmetatable%({},",
-            -- Add common class/object initialization patterns here
-            "local%s+[%w_]+%s*=%s*{",
-            "local%s+[%w_]+%s*=%s*require"
-        },
-        -- Valid arithmetic operations
-        mathOperations = {
-            "=%s*[%w_.%(%)]+%s*%+%s*%d", -- var = something + number
-            "=%s*%d+%s*%+%s*[%w_.%(%)]+", -- var = number + something
-            "%(%s*[%w_.%(%)]+%s*%+%s*%d", -- (something + number)
-            "%(%s*%d+%s*%+%s*[%w_.%(%)]+", -- (number + something)
-            "return%s+[%w_.%(%)]+%s*%+%s*%d", -- return something + number
-            "return%s+%d+%s*%+%s*[%w_.%(%)]+", -- return number + something
-            "%w+%s*%+%s*=", -- increment operation: i += 1
-            -- Time related patterns (common in LÖVE games)
-            "getTime%(%s*%)%s*%+", -- love.timer.getTime() + something
-            "dt%s*%*%s*[%d.]+%s*%+", -- dt * number + something
-            "%[%s*[%w_]+%s*%+%s*%d+%s*%]", -- array[index + 1] style access
-            "for%s+[%w_]+%s*=%s*[%w_]+%s*%+%s*%d+", -- for loops: for i = start + 1
-            "i%s*=%s*i%s*%+%s*%d", -- loop increments: i = i + 1
-            "%w+%s*=%s*%w+%s*%+%s*#" -- Adding table lengths: x = y + #table
         }
     }
 }
@@ -103,121 +42,14 @@ SyntaxChecker.state = {
 }
 
 --------------------------------------------------
--- Helper Functions
+-- Helper function to add an issue
 --------------------------------------------------
-local function isModuleAccess(name)
-    for _, pattern in ipairs(SyntaxChecker.config.safePatterns.moduleAccess) do
-        if name:match(pattern) then return true end
-    end
-    return false
-end
-
-local function isKnownGlobal(name)
-    for _, global in ipairs(SyntaxChecker.config.safePatterns.knownGlobals) do
-        if name == global then return true end
-    end
-    return false
-end
-
-local function isTableContext(line)
-    for _, pattern in ipairs(SyntaxChecker.config.safePatterns.tableContext) do
-        if line:match(pattern) then return true end
-    end
-    return false
-end
-
-local function isInitPattern(line)
-    for _, pattern in ipairs(SyntaxChecker.config.safePatterns.init) do
-        if line:match(pattern) then return true end
-    end
-    return false
-end
-
-local function isValidMathOperation(line)
-    -- First check for common math operation patterns
-    for _, pattern in ipairs(SyntaxChecker.config.safePatterns.mathOperations) do
-        if line:match(pattern) then return true end
-    end
-    
-    -- Look for incrementing/counting patterns: count = count + 1, index = index + offset
-    if line:match("[%w_]+%s*=%s*[%w_]+%s*%+%s*%d") or
-       line:match("[%w_]+%s*=%s*[%w_]+%s*%+%s*[%w_]+") then
-        return true
-    end
-    
-    -- Detect math operations with math functions
-    if line:match("math%.") and line:match("%+") then
-        return true
-    end
-    
-    -- Check for operations in function calls: func(a + b)
-    if line:match("[%w_]+%s*%b()") and line:match("%+") then
-        return true
-    end
-    
-    return false
-end
-
-local function isStringConcatenation(line)
-    -- Skip comments
-    if line:match("^%s*%-%-") then
-        return false
-    end
-    
-    -- Skip lines with valid math operations
-    if isValidMathOperation(line) then
-        return false
-    end
-    
-    -- Look for + operator that's likely concatenating strings
-    if line:match("['\"].-['\"]%s*%+") or -- "string" +
-       line:match("%+%s*['\"].-['\"]") or -- + "string"
-       line:match("[%w_]%s*%+%s*['\"]") or -- var + "string"
-       line:match("['\"]%s*%+%s*[%w_]") then -- "string" + var
-        return true
-    end
-    
-    -- Check for other non-numeric + operations that aren't caught by math patterns
-    if line:match("%+") and 
-       not line:match("%d%s*%+%s*%d") and -- not number + number
-       not line:match("%.%.") and -- doesn't already use string concat
-       not line:match("[%+%-%*/%%]%s*%+") then -- not part of a compound math expression (+, -, *, /, %)
-        
-        -- Further check to avoid false positives in complex expressions
-        if not (line:match("function") or line:match("return%s+function")) then
-            -- If we reach here, it's likely a string concatenation using +
-            return true
-        end
-    end
-    
-    return false
-end
-
-local function isTableFieldDef(line, contextStack)
-    if #contextStack > 0 and contextStack[#contextStack] == "table" then
-        return line:match("^%s*[%w_\"'%[]+%s*=%s*.+") or
-               line:match("^%s*{") or
-               line:match("^%s*%b()%s*$") or 
-               line:match("^%s*function%s*%b()") or
-               line:match("^%s*%d+%s*$") or
-               line:match("^%s*[\"']")
-    end
-    return false
-end
-
-local function getSpecialRules(filename)
-    for pattern, rules in pairs(SyntaxChecker.config.ignoreFiles.special) do
-        if filename:match(pattern) then return rules end
-    end
-    return nil
-end
-
 local function addIssue(lineNum, text, message, severity)
     table.insert(SyntaxChecker.state.issues, {
         line = lineNum,
         text = text,
         message = message,
-        severity = severity or "warning"
+        severity = severity or "error" -- Default everything to 'error' now
     })
     
     if severity == "error" then
@@ -228,79 +60,41 @@ local function addIssue(lineNum, text, message, severity)
 end
 
 --------------------------------------------------
--- Analysis Functions
+-- Only keep checks for actual parse errors or 
+-- definitely-invalid code.
 --------------------------------------------------
-local function analyzeVariableAccess(line, lineNum, specialRules)
-    -- Check variable assignments without 'local'
-    if not isTableFieldDef(line, SyntaxChecker.state.contextStack) and 
-       not (specialRules and specialRules.ignoreLocalMissing)
-    then
-        local varName = line:match("^%s*([%w_]+)%s*=")
-        if varName and not line:match("^%s*local%s+") and 
-           not line:match("^%s*for%s+") and 
-           not isKnownGlobal(varName) then
-            addIssue(lineNum, line, "Missing 'local' for variable '" .. varName .. "'")
-        end
-    end
-    
-    -- Check for potential nil access
-    if not (specialRules and specialRules.ignoreNilAccess) then
-        for objName in line:gmatch("([%w_]+)%.%w+") do
-            if not isInitPattern(line) and
-               not isKnownGlobal(objName) and
-               not SyntaxChecker.state.scopeVars[objName] and
-               not isModuleAccess(objName) then
-                addIssue(lineNum, line, "Potential nil access on '" .. objName .. "'")
-            end
-        end
-    end
-end
-
 local function analyzeSyntax(line, lineNum)
-    -- Empty blocks
-    if line:match("then%s*end") or line:match("do%s*end") then
-        addIssue(lineNum, line, "Empty block detected")
-    end
-
-    -- Unnecessary semicolons
-    if line:match(";%s*$") and not line:match("for.*,.*,.*do") then
-        addIssue(lineNum, line, "Unnecessary semicolon at line end")
-    end
-
-    -- C-style comments
+    -- Check for C-style "//" comment
     if line:match("//") and not line:match("http://") and not line:match("https://") then
         addIssue(lineNum, line, "C-style comment detected (use -- instead)", "error")
     end
 
-    -- String concatenation using +
-    if isStringConcatenation(line) then
-        addIssue(lineNum, line, "Using + for string concatenation (use .. instead)", "error")
-    end
-
-    -- Common Lua syntax errors
+    -- "else {" -> must be "else" + "end"
     if line:match("else%s*{") then
-        addIssue(lineNum, line, "Use 'then' instead of { after else", "error")
+        addIssue(lineNum, line, "Use 'then' and 'end' instead of { after else", "error")
     end
 
-    if line:match("if.*{%s*$") and not line:match("function") and 
-       not line:match("[\"'].-{.-[\"']") then
+    -- "if something {" -> must be "if something then ... end"
+    if line:match("if.*{%s*$") and not line:match("function") and not line:match("[\"'].-{.-[\"']") then
         addIssue(lineNum, line, "Use 'then' instead of { for if statements", "error")
     end
 
-    -- Check for missing then in if statements
+    -- Check for missing 'then' in if statements
+    -- e.g. "if x > 0" but no 'then'
     if line:match("if%s+.+$") and 
        not line:match("then") and 
        not line:match("%-%-") and
        not line:match("{") then
         addIssue(lineNum, line, "Missing 'then' in if statement", "error")
     end
-    
-    -- Check for braces vs "end" keyword
-    if line:match("[^-]%s*}%s*$") and 
-       not line:match("^%s*%-%-") and
-       not line:match("=%s*function.*}") and
-       not line:match("=%s*{.*}") then
-        addIssue(lineNum, line, "JavaScript-style closing brace (use 'end' keyword in Lua)", "error")
+
+    -- JavaScript-style closing brace
+    -- e.g. "}" on a line by itself where Lua expects 'end'
+    if line:match("[^-]%s*}%s*$") and          -- there's a '}' near EOL, ignoring lines that start with "--"
+       not line:match("^%s*%-%-") and          -- skip comment lines
+       not line:match("=%s*function.*}") and   -- skip inline function definitions like x = function() end
+       not line:match("=%s*{.*}") then         -- skip table literals like x = { something }
+        addIssue(lineNum, line, "JavaScript-style closing brace (use 'end' in Lua)", "error")
     end
 end
 
@@ -314,7 +108,7 @@ function SyntaxChecker.checkFile(filename)
         return false
     end
     
-    -- Reset state
+    -- Reset state for each file
     SyntaxChecker.state.issues = {}
     SyntaxChecker.state.contextStack = {}
     SyntaxChecker.state.scopeVars = {}
@@ -322,9 +116,7 @@ function SyntaxChecker.checkFile(filename)
     SyntaxChecker.state.gotoJumps = {}
     SyntaxChecker.state.currentFile = filename
     
-    local specialRules = getSpecialRules(filename)
-    
-    -- Initial syntax check
+    -- Attempt to compile the file; if there's a syntax error, it fails here.
     local loaded, errorMsg = loadfile(filename)
     if not loaded then
         local lineNum = tonumber(errorMsg:match(":(%d+):")) or 0
@@ -338,53 +130,35 @@ function SyntaxChecker.checkFile(filename)
     local bracketStack = {}
     local codeLines = {}
     local lineNum = 0
-    
+
     file:seek("set", 0)
     for line in file:lines() do
         lineNum = lineNum + 1
         codeLines[lineNum] = line
         
         -- Handle multiline comments
-        if line:match("%-%-%[=*%[") then inMultilineComment = true end
-        if inMultilineComment and line:match("%]=*%]") then inMultilineComment = false end
+        if line:match("%-%-%[=*%[") then
+            inMultilineComment = true
+        end
+        if inMultilineComment and line:match("%]=*%]") then
+            inMultilineComment = false
+        end
         
         if not inMultilineComment then
-            -- Track contexts and scopes
+            -- Track function starts/ends
             if line:match("function%s+[%w%.:]-%s*%(") then
                 table.insert(functionStack, lineNum)
             end
-            
             if line:match("^%s*end%s*[^-]*$") and #functionStack > 0 then
                 table.remove(functionStack)
             end
-            
-            if isTableContext(line) then
-                table.insert(SyntaxChecker.state.contextStack, "table")
-            end
-            
-            if line:match("%}") and #SyntaxChecker.state.contextStack > 0 then
-                table.remove(SyntaxChecker.state.contextStack)
-            end
-            
-            -- Track local variables and labels
-            for varName in line:gmatch("local%s+([%w_]+)") do
-                SyntaxChecker.state.scopeVars[varName] = true
-            end
-            
-            local label = line:match("^%s*::([%w_]+)::")
-            if label then SyntaxChecker.state.gotoLabels[label] = lineNum end
-            
-            local jump = line:match("goto%s+([%w_]+)")
-            if jump then
-                table.insert(SyntaxChecker.state.gotoJumps, {label = jump, line = lineNum})
-            end
-            
-            -- Track braces
+
+            -- Track braces for unmatched brace errors
             local openBraces = 0
             local closeBraces = 0
             for _ in line:gmatch("{") do openBraces = openBraces + 1 end
             for _ in line:gmatch("}") do closeBraces = closeBraces + 1 end
-            
+
             for _ = 1, openBraces do table.insert(bracketStack, lineNum) end
             for _ = 1, closeBraces do 
                 if #bracketStack > 0 then
@@ -393,34 +167,50 @@ function SyntaxChecker.checkFile(filename)
                     addIssue(lineNum, line, "Unmatched closing brace", "error")
                 end
             end
-            
-            -- Run main analysis
-            analyzeVariableAccess(line, lineNum, specialRules)
+
+            -- Check for labeled goto
+            local label = line:match("^%s*::([%w_]+)::")
+            if label then
+                SyntaxChecker.state.gotoLabels[label] = lineNum
+            end
+            local jump = line:match("goto%s+([%w_]+)")
+            if jump then
+                table.insert(SyntaxChecker.state.gotoJumps, {label = jump, line = lineNum})
+            end
+
+            -- Check syntax (actual parse errors or invalid code style)
             analyzeSyntax(line, lineNum)
         end
     end
     
-    -- Check for unmatched structures
+    file:close()
+
+    -- Check for any unclosed functions
     if #functionStack > 0 then
         for _, funcLine in ipairs(functionStack) do
             addIssue(funcLine, codeLines[funcLine], "Unclosed function", "error")
         end
     end
-    
+
+    -- Check for unmatched braces
     if #bracketStack > 0 then
         for _, braceLine in ipairs(bracketStack) do
             addIssue(braceLine, codeLines[braceLine], "Unclosed brace", "error")
         end
     end
-    
-    for _, jump in ipairs(SyntaxChecker.state.gotoJumps) do
-        if not SyntaxChecker.state.gotoLabels[jump.label] then
-            addIssue(jump.line, codeLines[jump.line],
-                    "Invalid goto: label '" .. jump.label .. "' not found", "error")
+
+    -- Check for invalid goto labels
+    for _, jumpInfo in ipairs(SyntaxChecker.state.gotoJumps) do
+        if not SyntaxChecker.state.gotoLabels[jumpInfo.label] then
+            addIssue(
+                jumpInfo.line,
+                codeLines[jumpInfo.line],
+                "Invalid goto: label '" .. jumpInfo.label .. "' not found",
+                "error"
+            )
         end
     end
     
-    file:close()
     return #SyntaxChecker.state.issues == 0
 end
 
@@ -430,7 +220,7 @@ end
 function SyntaxChecker.scanDirectory(directory)
     local commandStr = package.config:sub(1,1) == "\\" and
         'powershell -Command "Get-ChildItem -Path \'' .. directory .. '\' -Filter *.lua -Recurse | ForEach-Object { $_.FullName }"'
-        or 'find "' .. directory .. '" -name "*.lua" -type f'
+        or ('find "' .. directory .. '" -name "*.lua" -type f')
 
     local handle = io.popen(commandStr)
     if not handle then
@@ -438,8 +228,11 @@ function SyntaxChecker.scanDirectory(directory)
         return false
     end
 
+    local filesContent = handle:read("*a")
+    handle:close()
     local files = {}
-    for filename in handle:read("*a"):gmatch("[^\r\n]+") do
+
+    for filename in filesContent:gmatch("[^\r\n]+") do
         filename = filename:gsub("\\", "/")
         local skip = false
         for _, pattern in ipairs(SyntaxChecker.config.ignoreFiles.skip) do
@@ -448,12 +241,14 @@ function SyntaxChecker.scanDirectory(directory)
                 break
             end
         end
-        if not skip then table.insert(files, filename) end
+        if not skip then
+            table.insert(files, filename)
+        end
     end
-    table.sort(files)
-    handle:close()
 
-    local allPassed = true
+    table.sort(files)
+
+    -- Reset stats
     SyntaxChecker.state.stats = {
         filesChecked = 0,
         errorCount = 0,
@@ -461,18 +256,19 @@ function SyntaxChecker.scanDirectory(directory)
         filesWithIssues = 0
     }
 
+    local allPassed = true
+
     for _, filename in ipairs(files) do
         print("Checking: " .. filename)
         SyntaxChecker.state.stats.filesChecked = SyntaxChecker.state.stats.filesChecked + 1
-        
+
         local success = SyntaxChecker.checkFile(filename)
         if not success then
             allPassed = false
             SyntaxChecker.state.stats.filesWithIssues = SyntaxChecker.state.stats.filesWithIssues + 1
             
-            -- Group issues
-            local errors = {}
-            local warnings = {}
+            -- Separate errors from warnings
+            local errors, warnings = {}, {}
             for _, issue in ipairs(SyntaxChecker.state.issues) do
                 if issue.severity == "error" then
                     table.insert(errors, issue)
@@ -480,8 +276,7 @@ function SyntaxChecker.scanDirectory(directory)
                     table.insert(warnings, issue)
                 end
             end
-            
-            -- Print errors first
+
             if #errors > 0 then
                 print(string.format("\n  ❌ %d error(s):", #errors))
                 for _, issue in ipairs(errors) do
@@ -491,20 +286,18 @@ function SyntaxChecker.scanDirectory(directory)
                     end
                 end
             end
-            
-            -- Then warnings (more concise)
+
             if #warnings > 0 then
                 print(string.format("\n  ⚠️  %d warning(s):", #warnings))
                 for _, issue in ipairs(warnings) do
                     print(string.format("    Line %d: %s", issue.line, issue.message))
                 end
             end
-            
-            print("") -- Extra line for readability
+
+            print("") -- Extra blank line
         end
     end
 
-    -- Print summary
     print("\n=== Syntax Check Summary ===")
     if SyntaxChecker.state.stats.errorCount > 0 then
         print(string.format("❌ Found %d error(s) and %d warning(s) in %d file(s)",
@@ -522,7 +315,7 @@ function SyntaxChecker.scanDirectory(directory)
     return allPassed
 end
 
--- Only run if executed directly
+-- Only run if executed directly:
 if arg and arg[0]:match("syntaxchecker.lua") then
     print("Scanning Lua files for syntax errors...")
     SyntaxChecker.scanDirectory(".")
