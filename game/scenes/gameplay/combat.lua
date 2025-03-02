@@ -1,8 +1,6 @@
 -- game/scenes/gameplay/combat.lua
--- Minor changes to handle tower arrays. We rely on the actual tower object
--- passed in {type="tower", tower=<some tower>}.
--- Now with support for minion weapons - reduces durability after attack.
--- Now integrated with EventBus for decoupled architecture
+-- Refactored to use board methods for state changes
+-- Now fully integrated with EventBus for decoupled architecture
 
 local CombatSystem = {}
 local EffectManager = require("game.managers.effectmanager")
@@ -32,6 +30,7 @@ function CombatSystem.resolveAttack(gameplayOrManager, attackerInfo, targetInfo)
     end
 
     local currentPlayer = gm:getCurrentPlayer()
+    local board = gm.board
 
     if attackerInfo.type == "minion" then
         local attacker = attackerInfo.minion
@@ -45,7 +44,6 @@ function CombatSystem.resolveAttack(gameplayOrManager, attackerInfo, targetInfo)
             -- Check if target is in reach
             if distance > attackerReach then
                 print("Target is out of reach!")
-                -- Publish attack failed event
                 EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "AttackFailed", "OutOfRange")
                 return
             end
@@ -53,38 +51,20 @@ function CombatSystem.resolveAttack(gameplayOrManager, attackerInfo, targetInfo)
             -- Publish attack event before damage is applied
             EventBus.publish(EventBus.Events.MINION_ATTACKED, attacker, target)
             
-            -- Store original health values for events
-            local targetOldHealth = target.currentHealth
-            local attackerOldHealth = attacker.currentHealth
-            
-            -- Apply damage to target
-            target.currentHealth = target.currentHealth - attacker.attack
-            
-            -- Publish minion damaged event with before/after health
-            EventBus.publish(EventBus.Events.MINION_DAMAGED, 
-                             target, attacker.attack, targetOldHealth, target.currentHealth)
+            -- Apply damage to target using board method
+            board:applyDamageToMinion(target, attacker.attack, attacker)
             
             print(attacker.name .. " attacked " .. target.name .. " for " .. attacker.attack .. " damage!")
 
             -- Handle counterattacks based on archetype
             if attacker.archetype == "Melee" then
-                attacker.currentHealth = attacker.currentHealth - target.attack
-                
-                -- Publish counterattack event
-                EventBus.publish(EventBus.Events.MINION_ATTACKED, target, attacker)
-                EventBus.publish(EventBus.Events.MINION_DAMAGED, 
-                               attacker, target.attack, attackerOldHealth, attacker.currentHealth)
+                board:applyDamageToMinion(attacker, target.attack, target)
                 
                 print(target.name .. " counterattacked " .. attacker.name .. " for " .. target.attack .. " damage!")
             else
                 -- Ranged/Magic only take counter if within target's reach
                 if distance <= targetReach then
-                    attacker.currentHealth = attacker.currentHealth - target.attack
-                    
-                    -- Publish counterattack event
-                    EventBus.publish(EventBus.Events.MINION_ATTACKED, target, attacker)
-                    EventBus.publish(EventBus.Events.MINION_DAMAGED, 
-                                   attacker, target.attack, attackerOldHealth, attacker.currentHealth)
+                    board:applyDamageToMinion(attacker, target.attack, target)
                     
                     print(target.name .. " counterattacked " .. attacker.name .. " for " .. target.attack .. " damage!")
                 else
@@ -95,17 +75,7 @@ function CombatSystem.resolveAttack(gameplayOrManager, attackerInfo, targetInfo)
 
             -- If the attacker has a weapon, reduce its durability
             if attacker.weapon then
-                local oldDurability = attacker.weapon.durability
                 EffectManager.reduceWeaponDurability(attacker)
-                
-                -- If weapon still exists but durability reduced, publish event
-                if attacker.weapon then
-                    EventBus.publish(EventBus.Events.WEAPON_EQUIPPED, 
-                                   attacker, attacker.weapon, oldDurability, attacker.weapon.durability)
-                else
-                    -- Weapon broke
-                    EventBus.publish(EventBus.Events.WEAPON_BROKEN, attacker, oldDurability)
-                end
             end
 
             -- Check for target death
@@ -113,13 +83,12 @@ function CombatSystem.resolveAttack(gameplayOrManager, attackerInfo, targetInfo)
                 local tx, ty = target.position.x, target.position.y
                 
                 -- Trigger deathrattle effect before death event
-                EventBus.publish(EventBus.Events.DEATHRATTLE_TRIGGERED, target, gm:getEnemyPlayer(attacker.owner), gm)
+                if target.deathrattle then
+                    EventBus.publish(EventBus.Events.DEATHRATTLE_TRIGGERED, target, gm:getEnemyPlayer(attacker.owner), gm)
+                end
                 
-                -- Publish minion died event
-                EventBus.publish(EventBus.Events.MINION_DIED, target, attacker)
-                
-                -- Still handle the direct board modification (could be moved to an event handler later)
-                gm.board:removeMinion(tx, ty)
+                -- Remove minion from board - the board's removeMinion now publishes MINION_REMOVED event
+                board:removeMinion(tx, ty)
                 print(target.name .. " has been defeated!")
             end
 
@@ -128,13 +97,12 @@ function CombatSystem.resolveAttack(gameplayOrManager, attackerInfo, targetInfo)
                 local ax, ay = attacker.position.x, attacker.position.y
                 
                 -- Trigger deathrattle effect before death event
-                EventBus.publish(EventBus.Events.DEATHRATTLE_TRIGGERED, attacker, attacker.owner, gm)
+                if attacker.deathrattle then
+                    EventBus.publish(EventBus.Events.DEATHRATTLE_TRIGGERED, attacker, attacker.owner, gm)
+                end
                 
-                -- Publish minion died event
-                EventBus.publish(EventBus.Events.MINION_DIED, attacker, target)
-                
-                -- Still handle the direct board modification (could be moved to an event handler later)
-                gm.board:removeMinion(ax, ay)
+                -- Remove minion from board - the board's removeMinion now publishes MINION_REMOVED event
+                board:removeMinion(ax, ay)
                 print(attacker.name .. " has been defeated!")
             end
 
@@ -162,17 +130,7 @@ function CombatSystem.resolveAttack(gameplayOrManager, attackerInfo, targetInfo)
                 
                 -- If the attacker has a weapon, reduce its durability
                 if attacker.weapon then
-                    local oldDurability = attacker.weapon.durability
                     EffectManager.reduceWeaponDurability(attacker)
-                    
-                    -- If weapon still exists but durability reduced, publish event
-                    if attacker.weapon then
-                        EventBus.publish(EventBus.Events.WEAPON_EQUIPPED, 
-                                       attacker, attacker.weapon, oldDurability, attacker.weapon.durability)
-                    else
-                        -- Weapon broke
-                        EventBus.publish(EventBus.Events.WEAPON_BROKEN, attacker, oldDurability)
-                    end
                 end
                 
                 -- Check if tower is destroyed
@@ -190,9 +148,47 @@ function CombatSystem.resolveAttack(gameplayOrManager, attackerInfo, targetInfo)
         end
     end
 
-    -- Additional combat-related events could be published here
-    -- For example, we might want to track combat statistics or trigger effects
+    -- Publish combat resolved event
     EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "CombatResolved", attackerInfo, targetInfo)
+end
+
+-- Apply a healing effect to a minion
+function CombatSystem.healMinion(gameplayOrManager, minion, amount, source)
+    local gm
+    if gameplayOrManager.gameManager then
+        gm = gameplayOrManager.gameManager
+    else
+        gm = gameplayOrManager
+    end
+    
+    -- Use the board's heal method
+    return gm.board:healMinion(minion, amount, source)
+end
+
+-- Apply a buff to a minion
+function CombatSystem.buffMinion(gameplayOrManager, minion, attackBuff, healthBuff, source)
+    local gm
+    if gameplayOrManager.gameManager then
+        gm = gameplayOrManager.gameManager
+    else
+        gm = gameplayOrManager
+    end
+    
+    -- Use the board's buff method
+    return gm.board:buffMinion(minion, attackBuff, healthBuff, source)
+end
+
+-- Apply a temporary effect to a minion
+function CombatSystem.applyEffect(gameplayOrManager, minion, effectType, duration, source)
+    local gm
+    if gameplayOrManager.gameManager then
+        gm = gameplayOrManager.gameManager
+    else
+        gm = gameplayOrManager
+    end
+    
+    -- Use the board's effect method
+    return gm.board:addMinionEffect(minion, effectType, duration, source)
 end
 
 return CombatSystem

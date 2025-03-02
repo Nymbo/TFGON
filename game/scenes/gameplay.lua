@@ -1,13 +1,7 @@
 -- game/scenes/gameplay.lua
--- Main gameplay scene.
--- Now accepts a selected deck for player 1 via its constructor.
--- Also accepts a selected board configuration.
--- Displays a banner at the start of each turn using dedicated BannerSystem.
--- Includes AI opponent functionality.
--- A game over popup menu is displayed when a player's tower is destroyed,
--- styled similarly to the Settings menu using theme.lua.
--- Added support for spell targeting and minion weapons
--- Now using EventBus for AI turns and banner system
+-- Main gameplay scene with full EventBus integration
+-- Now using board and player methods for state changes
+-- Improved event handling for effects, battlecries, and targeting
 
 local GameManager = require("game.managers.gamemanager")
 local DrawSystem = require("game.scenes.gameplay.draw")
@@ -17,12 +11,12 @@ local BoardRenderer = require("game.ui.boardrenderer")
 local AIManager = require("game.managers.aimanager")
 local Theme = require("game.ui.theme")
 local CardRenderer = require("game.ui.cardrenderer")
-local Animation = require("game.managers.animation")  -- Import our Animation manager
-local EffectManager = require("game.managers.effectmanager") -- Added for target checking
-local EventBus = require("game.eventbus") -- Added for event-based architecture
-local BannerSystem = require("game.ui.bannersystem") -- Added BannerSystem
+local Animation = require("game.managers.animation")
+local EffectManager = require("game.managers.effectmanager")
+local EventBus = require("game.eventbus")
+local BannerSystem = require("game.ui.bannersystem")
 
--- Local helper function to draw a themed button (similar to settings.lua)
+-- Local helper function to draw a themed button
 local function drawThemedButton(text, x, y, width, height, isHovered, isSelected)
     love.graphics.setColor(Theme.colors.buttonShadow)
     love.graphics.rectangle(
@@ -65,14 +59,12 @@ local function drawThemedButton(text, x, y, width, height, isHovered, isSelected
     love.graphics.printf(text, x, y + (height - Theme.fonts.button:getHeight())/2, width, "center")
 end
 
--- Local function to update the position of a dragged card using manual momentum
--- (While dragging, we keep the manual update for responsiveness.)
+-- Local function to update dragged card position
 local function updateDraggedCard(card, dt)
     local cardWidth, cardHeight = CardRenderer.getCardDimensions()
     local mx, my = love.mouse.getPosition()
     card.target_transform.x = mx - cardWidth / 2
     card.target_transform.y = my - cardHeight / 2
-    -- Here you could add momentum-based logic; for now, we update directly.
     card.transform.x = card.target_transform.x
     card.transform.y = card.target_transform.y
 end
@@ -80,10 +72,7 @@ end
 local Gameplay = {}
 Gameplay.__index = Gameplay
 
--- Constructor for Gameplay scene.
--- 'selectedDeck' is passed in from Deck Selection.
--- 'selectedBoard' is passed in from Deck Selection.
--- 'aiOpponent' enables the AI opponent.
+-- Constructor for Gameplay scene
 function Gameplay:new(changeSceneCallback, selectedDeck, selectedBoard, aiOpponent)
     local self = setmetatable({}, Gameplay)
     
@@ -146,6 +135,12 @@ function Gameplay:new(changeSceneCallback, selectedDeck, selectedBoard, aiOppone
     self.pendingEffectCardIndex = nil
     self.validTargets = {}
     
+    -- Animation state
+    self.animations = {
+        active = false,
+        queue = {}
+    }
+    
     -- Setup event subscriptions
     self:initEventSubscriptions()
     
@@ -195,27 +190,107 @@ function Gameplay:initEventSubscriptions()
     table.insert(self.eventSubscriptions, EventBus.subscribe(
         EventBus.Events.CARD_PLAYED,
         function(player, card)
-            -- Add any card played effects
+            -- Add animation for card played (future enhancement)
+            self:queueAnimation("cardPlayed", {card = card, player = player})
         end,
         "GameplayScene-CardHandler"
     ))
     
     -- Subscribe to minion events
     table.insert(self.eventSubscriptions, EventBus.subscribe(
+        EventBus.Events.MINION_DAMAGED,
+        function(minion, source, damage, oldHealth, newHealth)
+            -- Add animation for damage (future enhancement)
+            self:queueAnimation("damage", {
+                target = minion, 
+                amount = damage,
+                position = {x = minion.position.x, y = minion.position.y}
+            })
+        end,
+        "GameplayScene-DamageHandler"
+    ))
+    
+    table.insert(self.eventSubscriptions, EventBus.subscribe(
+        EventBus.Events.MINION_HEALED,
+        function(minion, source, amount, oldHealth, newHealth)
+            -- Add animation for healing (future enhancement)
+            self:queueAnimation("heal", {
+                target = minion, 
+                amount = amount,
+                position = {x = minion.position.x, y = minion.position.y}
+            })
+        end,
+        "GameplayScene-HealHandler"
+    ))
+    
+    table.insert(self.eventSubscriptions, EventBus.subscribe(
         EventBus.Events.MINION_DIED,
         function(minion, killer)
-            -- Add any special effects for minion death
+            -- Add animation for minion death (future enhancement)
+            self:queueAnimation("death", {
+                minion = minion,
+                position = {x = minion.position.x, y = minion.position.y}
+            })
         end,
-        "GameplayScene-MinionHandler"
+        "GameplayScene-DeathHandler"
     ))
     
     -- Subscribe to tower events
     table.insert(self.eventSubscriptions, EventBus.subscribe(
-        EventBus.Events.TOWER_DESTROYED,
-        function(tower, destroyer)
-            -- Add any special effects for tower destruction
+        EventBus.Events.TOWER_DAMAGED,
+        function(tower, attacker, damage, oldHealth, newHealth)
+            -- Add animation for tower damage (future enhancement)
+            self:queueAnimation("towerDamage", {
+                tower = tower,
+                amount = damage,
+                position = {x = tower.position.x, y = tower.position.y}
+            })
         end,
         "GameplayScene-TowerHandler"
+    ))
+    
+    -- Subscribe to effect events
+    table.insert(self.eventSubscriptions, EventBus.subscribe(
+        EventBus.Events.EFFECT_TRIGGERED,
+        function(effectType, player, target)
+            -- Handle visual feedback for effects (future enhancement)
+            if effectType == "SpellCastFailed" or effectType == "WeaponEquipFailed" then
+                -- Show failure feedback
+                self:queueAnimation("effectFailed", {
+                    type = effectType,
+                    player = player
+                })
+            end
+        end,
+        "GameplayScene-EffectHandler"
+    ))
+    
+    -- Listen for board state changes
+    table.insert(self.eventSubscriptions, EventBus.subscribe(
+        EventBus.Events.MINION_MOVED,
+        function(minion, oldPosition, newPosition)
+            -- Animate minion movement (future enhancement)
+            self:queueAnimation("movement", {
+                minion = minion,
+                from = oldPosition,
+                to = newPosition
+            })
+        end,
+        "GameplayScene-MovementHandler"
+    ))
+    
+    -- Listen for mana changes to update UI
+    table.insert(self.eventSubscriptions, EventBus.subscribe(
+        EventBus.Events.PLAYER_MANA_CHANGED,
+        function(player, oldValue, newValue)
+            -- Potentially animate mana changes (future enhancement)
+            self:queueAnimation("manaChange", {
+                player = player,
+                oldValue = oldValue,
+                newValue = newValue
+            })
+        end,
+        "GameplayScene-ManaHandler"
     ))
 end
 
@@ -228,6 +303,15 @@ function Gameplay:clearEventSubscriptions()
         EventBus.unsubscribe(sub)
     end
     self.eventSubscriptions = {}
+end
+
+--------------------------------------------------
+-- queueAnimation: Queue an animation for later processing
+-- This is a stub for future animation enhancements
+--------------------------------------------------
+function Gameplay:queueAnimation(animType, data)
+    table.insert(self.animations.queue, {type = animType, data = data})
+    -- Future enhancement: Process animation queue and show visual effects
 end
 
 function Gameplay:update(dt)
@@ -260,6 +344,9 @@ function Gameplay:update(dt)
     if self.pendingEffect then
         self:updateValidTargets()
     end
+    
+    -- Process events in the animation queue (future enhancement)
+    -- This would play animations triggered by events
     
     -- Process EventBus events
     EventBus.update(dt)
@@ -382,10 +469,11 @@ function Gameplay:draw()
         love.graphics.printf(promptMessage, 0, 20, love.graphics.getWidth(), "center")
     end
     
-    -- No separate weapon card drawing - this is now handled by BoardRenderer
+    -- Draw any active animation effects (future enhancement)
+    -- This would render additional visual elements for events
 end
 
--- New function to draw targeting indicators
+-- Draw targeting indicators
 function Gameplay:drawTargetingIndicators()
     local boardX, boardY = BoardRenderer.getBoardPosition()
     local TILE_SIZE = BoardRenderer.getTileSize()
@@ -511,9 +599,9 @@ function Gameplay:mousepressed(x, y, button, istouch, presses)
             )
             
             if success then
-                -- Remove the card from hand (it's already been removed from the hand array)
+                -- Spend mana for the card 
                 local currentPlayer = self.gameManager:getCurrentPlayer()
-                currentPlayer.manaCrystals = currentPlayer.manaCrystals - self.pendingEffectCard.cost
+                currentPlayer:spendMana(self.pendingEffectCard.cost)
                 
                 -- Publish card played event
                 EventBus.publish(EventBus.Events.CARD_PLAYED, currentPlayer, self.pendingEffectCard)
@@ -524,6 +612,9 @@ function Gameplay:mousepressed(x, y, button, istouch, presses)
                     self.pendingEffectCardIndex, 
                     self.pendingEffectCard
                 )
+                
+                -- Publish a card rejected event
+                EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "CardRejected", self.pendingEffectCard)
             end
             
             -- Clear the pending effect state
@@ -551,6 +642,9 @@ function Gameplay:mousepressed(x, y, button, istouch, presses)
                 self.pendingEffectCardIndex, 
                 self.pendingEffectCard
             )
+            
+            -- Publish a targeting cancelled event
+            EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "TargetingCancelled", self.pendingEffectCard)
             
             -- Clear the pending effect state
             self.pendingEffect = nil
@@ -602,6 +696,10 @@ function Gameplay:handleGameOverPopupClick(x, y)
 end
 
 function Gameplay:endTurn()
+    -- Publish turn ending event
+    EventBus.publish(EventBus.Events.TURN_ENDED, self.gameManager:getCurrentPlayer())
+    
+    -- Call game manager to end turn
     self.gameManager:endTurn()
 end
 
@@ -614,6 +712,9 @@ function Gameplay:keypressed(key)
                 self.pendingEffectCardIndex, 
                 self.pendingEffectCard
             )
+            
+            -- Publish a targeting cancelled event
+            EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "TargetingCancelled", self.pendingEffectCard)
             
             self.pendingEffect = nil
             self.pendingEffectCard = nil
@@ -648,6 +749,9 @@ function Gameplay:destroy()
             self.aiManager:destroy()
         end
     end
+    
+    -- Publish scene exit event
+    EventBus.publish(EventBus.Events.SCENE_EXITED, "gameplay")
 end
 
 return Gameplay
