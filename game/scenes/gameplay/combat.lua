@@ -113,7 +113,7 @@ function CombatSystem.resolveAttack(gameplayOrManager, attackerInfo, targetInfo)
                 local tx, ty = target.position.x, target.position.y
                 
                 -- Trigger deathrattle effect before death event
-                EffectManager.triggerDeathrattle(target, gm, gm:getEnemyPlayer(attacker.owner))
+                EventBus.publish(EventBus.Events.DEATHRATTLE_TRIGGERED, target, gm:getEnemyPlayer(attacker.owner), gm)
                 
                 -- Publish minion died event
                 EventBus.publish(EventBus.Events.MINION_DIED, target, attacker)
@@ -128,7 +128,7 @@ function CombatSystem.resolveAttack(gameplayOrManager, attackerInfo, targetInfo)
                 local ax, ay = attacker.position.x, attacker.position.y
                 
                 -- Trigger deathrattle effect before death event
-                EffectManager.triggerDeathrattle(attacker, gm, attacker.owner)
+                EventBus.publish(EventBus.Events.DEATHRATTLE_TRIGGERED, attacker, attacker.owner, gm)
                 
                 -- Publish minion died event
                 EventBus.publish(EventBus.Events.MINION_DIED, attacker, target)

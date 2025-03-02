@@ -3,8 +3,10 @@
 -- plus functions to trigger Battlecry and Deathrattle on minions.
 -- Now with support for targeted effects and minion weapons!
 -- Refactored to reduce duplicate code in weapon effects
+-- Now integrated with EventBus for decoupled architecture
 
 local EffectManager = {}
+local EventBus = require("game.eventbus")  -- Import the EventBus
 
 --------------------------------------------------
 -- Helper: createWeaponEffect
@@ -32,6 +34,9 @@ local function createWeaponEffect(archetypeRequirement)
                     -- Remove the old weapon's attack bonus
                     target.attack = baseAttack
                     
+                    -- Publish weapon removed event
+                    EventBus.publish(EventBus.Events.WEAPON_BROKEN, target, target.weapon)
+                    
                     print(target.name .. " discarded " .. target.weapon.name .. "!")
                 else
                     -- No previous weapon, current attack is base attack
@@ -48,10 +53,18 @@ local function createWeaponEffect(archetypeRequirement)
                 
                 -- Boost the minion's attack
                 target.attack = baseAttack + card.attack
+                
+                -- Publish weapon equipped event
+                EventBus.publish(EventBus.Events.WEAPON_EQUIPPED, target, target.weapon)
+                
                 print(target.name .. " equipped " .. card.name .. "!")
                 return true
             else
                 print("Warning: Weapon cannot be equipped by this minion")
+                
+                -- Publish failed weapon equip event
+                EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "WeaponEquipFailed", target, card)
+                
                 return false
             end
         end
@@ -73,11 +86,25 @@ local effectRegistry = {
         targetType = "EnemyTower",
         effectFn = function(gameManager, player, target)
             if target and target.hp then
+                -- Store old health for event
+                local oldHealth = target.hp
+                
                 -- Deal 6 damage to the selected tower
                 target.hp = target.hp - 6
+                
+                -- Publish tower damaged event
+                EventBus.publish(EventBus.Events.TOWER_DAMAGED, target, 6, oldHealth, target.hp)
+                
                 print("Fireball dealt 6 damage to a tower!")
+                
+                -- Publish spell cast success event
+                EventBus.publish(EventBus.Events.SPELL_CAST, player, "Fireball", target)
             else
                 print("Warning: Fireball effect called without valid target")
+                
+                -- Publish spell cast failed event
+                EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "SpellCastFailed", player, "Fireball")
+                
                 return false
             end
             return true
@@ -91,6 +118,73 @@ local effectRegistry = {
     StaffOfFireEffect = createWeaponEffect("Magic")
 }
 
+-- Store event subscriptions
+EffectManager.eventSubscriptions = {}
+
+--------------------------------------------------
+-- initEventSubscriptions():
+-- Set up event listeners for effect-related events
+--------------------------------------------------
+function EffectManager.initEventSubscriptions()
+    -- Clear any existing subscriptions
+    EffectManager.clearEventSubscriptions()
+    
+    -- Add new subscriptions
+    table.insert(EffectManager.eventSubscriptions, EventBus.subscribe(
+        EventBus.Events.BATTLECRY_TRIGGERED,
+        function(minion, player, gameManager)
+            EffectManager.triggerBattlecry(minion, gameManager, player)
+        end,
+        "EffectManager.battlecryHandler"
+    ))
+    
+    table.insert(EffectManager.eventSubscriptions, EventBus.subscribe(
+        EventBus.Events.DEATHRATTLE_TRIGGERED,
+        function(minion, player, gameManager)
+            EffectManager.triggerDeathrattle(minion, gameManager, player)
+        end,
+        "EffectManager.deathrattleHandler"
+    ))
+    
+    table.insert(EffectManager.eventSubscriptions, EventBus.subscribe(
+        EventBus.Events.MINION_ATTACKED,
+        function(attacker, target)
+            if attacker.weapon then
+                EffectManager.reduceWeaponDurability(attacker)
+            end
+        end,
+        "EffectManager.weaponDurabilityHandler"
+    ))
+    
+    table.insert(EffectManager.eventSubscriptions, EventBus.subscribe(
+        EventBus.Events.SPELL_CAST,
+        function(player, spellName, target)
+            -- Additional logic could be added here for spell interactions
+            -- This event is mainly for other systems to react to spells
+        end,
+        "EffectManager.spellCastHandler"
+    ))
+end
+
+--------------------------------------------------
+-- clearEventSubscriptions():
+-- Clean up event subscriptions to prevent memory leaks
+--------------------------------------------------
+function EffectManager.clearEventSubscriptions()
+    for _, sub in ipairs(EffectManager.eventSubscriptions) do
+        EventBus.unsubscribe(sub)
+    end
+    EffectManager.eventSubscriptions = {}
+end
+
+--------------------------------------------------
+-- destroy():
+-- Clean up resources when EffectManager is no longer needed
+--------------------------------------------------
+function EffectManager.destroy()
+    EffectManager.clearEventSubscriptions()
+end
+
 --------------------------------------------------
 -- Helper function: reduceWeaponDurability
 -- Used when a minion with a weapon attacks.
@@ -99,13 +193,26 @@ local effectRegistry = {
 --------------------------------------------------
 function EffectManager.reduceWeaponDurability(minion)
     if minion.weapon then
+        -- Save old values for event data
+        local oldDurability = minion.weapon.durability
+        local weaponName = minion.weapon.name
+        
+        -- Reduce durability
         minion.weapon.durability = minion.weapon.durability - 1
+        
+        -- Publish weapon durability changed event
+        EventBus.publish(EventBus.Events.WEAPON_EQUIPPED, minion, minion.weapon, oldDurability, minion.weapon.durability)
         
         if minion.weapon.durability <= 0 then
             -- Weapon breaks
             print(minion.name .. "'s " .. minion.weapon.name .. " broke!")
+            
             -- Restore original attack
             minion.attack = minion.weapon.baseAttack
+            
+            -- Publish weapon broken event
+            EventBus.publish(EventBus.Events.WEAPON_BROKEN, minion, weaponName)
+            
             minion.weapon = nil
         end
     end
@@ -156,11 +263,23 @@ function EffectManager.applyEffectKey(effectKey, gameManager, player, optionalTa
     if effect then
         if effect.requiresTarget and not optionalTarget then
             print("Warning: Effect requires target but none provided:", effectKey)
+            
+            -- Publish effect failed event
+            EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "EffectFailedNoTarget", player, effectKey)
+            
             return false
         end
+        
+        -- Before applying, publish effect triggered event
+        EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, effectKey, player, optionalTarget)
+        
         return effect.effectFn(gameManager, player, optionalTarget, card)
     else
         print("Warning: No effect function found for key:", effectKey)
+        
+        -- Publish unknown effect event
+        EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "UnknownEffect", player, effectKey)
+        
         return false
     end
 end
@@ -173,7 +292,14 @@ end
 --------------------------------------------------
 function EffectManager.triggerBattlecry(card, gameManager, player)
     if card and card.battlecry and type(card.battlecry) == "function" then
+        -- Publish battlecry triggering event before execution
+        EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "BattlecryTriggering", player, card)
+        
+        -- Execute the battlecry
         card.battlecry(gameManager, player)
+        
+        -- Publish battlecry complete event
+        EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "BattlecryComplete", player, card)
     end
 end
 
@@ -188,8 +314,18 @@ function EffectManager.triggerDeathrattle(minion, gameManager, owningPlayer)
     --
     -- Check if that data is attached:
     if minion.deathrattle and type(minion.deathrattle) == "function" then
+        -- Publish deathrattle triggering event before execution
+        EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "DeathrattleTriggering", owningPlayer, minion)
+        
+        -- Execute the deathrattle
         minion.deathrattle(gameManager, owningPlayer)
+        
+        -- Publish deathrattle complete event
+        EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "DeathrattleComplete", owningPlayer, minion)
     end
 end
+
+-- Initialize event subscriptions when the module is loaded
+EffectManager.initEventSubscriptions()
 
 return EffectManager

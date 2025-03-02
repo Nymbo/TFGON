@@ -122,10 +122,62 @@ function GameManager:new(selectedDeck, selectedBoard, isAIOpponent)
     -- Initialize event subscriptions
     self.eventSubscriptions = {}
     
+    -- Setup event subscriptions
+    self:initEventSubscriptions()
+    
     -- Publish game initialized event
     EventBus.publish(EventBus.Events.GAME_INITIALIZED, self)
 
     return self
+end
+
+--------------------------------------------------
+-- initEventSubscriptions():
+-- Set up event listeners for game-related events
+--------------------------------------------------
+function GameManager:initEventSubscriptions()
+    -- Clean up any existing subscriptions
+    for _, sub in ipairs(self.eventSubscriptions) do
+        EventBus.unsubscribe(sub)
+    end
+    self.eventSubscriptions = {}
+    
+    -- Subscribe to tower destroyed events to check game end condition
+    table.insert(self.eventSubscriptions, EventBus.subscribe(
+        EventBus.Events.TOWER_DESTROYED,
+        function(tower, destroyer)
+            -- Check if this destroys all of a player's towers
+            -- We'll let the update() method handle actual game end
+        end,
+        "GameManager-TowerHandler"
+    ))
+    
+    -- Subscribe to battlecry triggered events
+    table.insert(self.eventSubscriptions, EventBus.subscribe(
+        EventBus.Events.BATTLECRY_TRIGGERED,
+        function(minion, player, gameManager)
+            -- This will be handled by EffectManager, we just listen for logging
+        end,
+        "GameManager-BattlecryHandler"
+    ))
+    
+    -- Subscribe to deathrattle triggered events
+    table.insert(self.eventSubscriptions, EventBus.subscribe(
+        EventBus.Events.DEATHRATTLE_TRIGGERED,
+        function(minion, player, gameManager)
+            -- This will be handled by EffectManager, we just listen for logging
+        end,
+        "GameManager-DeathrattleHandler"
+    ))
+    
+    -- Subscribe to specific effect events
+    table.insert(self.eventSubscriptions, EventBus.subscribe(
+        EventBus.Events.EFFECT_TRIGGERED,
+        function(effectName, player, target)
+            -- Handle special effect logic here if needed
+        end,
+        "GameManager-EffectHandler"
+    ))
 end
 
 --------------------------------------------------
@@ -360,11 +412,9 @@ function GameManager:summonMinion(player, card, cardIndex, x, y)
     local success = self.board:placeMinion(minion, x, y)
     if success then
         -- Trigger battlecry effects
-        EffectManager.triggerBattlecry(card, self, player)
-        
-        -- Publish battlecry event if applicable
-        if card.battlecry then
-            EventBus.publish(EventBus.Events.BATTLECRY_TRIGGERED, minion, player)
+        if minion.battlecry then
+            -- Publish battlecry event for EffectManager and other listeners
+            EventBus.publish(EventBus.Events.BATTLECRY_TRIGGERED, minion, player, self)
         end
         
         -- Store old mana for event

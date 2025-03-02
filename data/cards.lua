@@ -1,6 +1,9 @@
 -- data/cards.lua
 -- Card data now includes "movement" and "archetype" for minions.
 -- Weapons now have archetypeRequirement to indicate which minions can equip them.
+-- Now integrating with EventBus for better effect handling
+local EventBus = require("game.eventbus")  -- Import EventBus
+
 return {
     --------------------------------------------------
     -- Basic Minions (with movement and archetype)
@@ -147,7 +150,7 @@ return {
     },
 
     --------------------------------------------------
-    -- Placeholder Minion with BATTLECRY
+    -- Minion with BATTLECRY - Draw a card
     --------------------------------------------------
     {
         name = "Scholar",
@@ -159,12 +162,16 @@ return {
         archetype = "Magic",
         battlecry = function(gameManager, player)
             -- TEXT: draw 1 card
+            -- Publish CARD_DRAW_REQUESTED event instead of directly drawing
+            EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "ScholarBattlecry", player)
+            
+            -- Still call the draw function to maintain compatibility
             player:drawCard(1)
         end
     },
 
     --------------------------------------------------
-    -- Placeholder Minion with DEATHRATTLE
+    -- Minion with DEATHRATTLE - Draw a card
     --------------------------------------------------
     {
         name = "Loot Hoarder",
@@ -176,9 +183,17 @@ return {
         archetype = "Melee",
         deathrattle = function(gameManager, player)
             -- TEXT: Draw 1 card
+            -- Publish CARD_DRAW_REQUESTED event
+            EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "LootHoarderDeathrattle", player)
+            
+            -- Still call the draw function to maintain compatibility
             player:drawCard(1)
         end
     },
+    
+    --------------------------------------------------
+    -- Minion with DEATHRATTLE - Deal damage to enemy tower
+    --------------------------------------------------
     {
         name = "Haunted Minion",
         cardType = "Minion",
@@ -188,11 +203,28 @@ return {
         movement = 2,
         archetype = "Ranged",
         deathrattle = function(gameManager, player)
-            -- TEXT: deal 2 damage to enemy hero
+            -- TEXT: deal 2 damage to enemy tower
             local enemy = gameManager:getEnemyPlayer(player)
+            
+            -- Publish effect triggered event
+            EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "HauntedMinionDeathrattle", player, enemy)
+            
             -- Update to deal damage to a tower instead
             if #enemy.towers > 0 then
+                -- Store old health for event
+                local oldHealth = enemy.towers[1].hp
+                
+                -- Apply damage
                 enemy.towers[1].hp = enemy.towers[1].hp - 2
+                
+                -- Publish tower damaged event with damage source
+                EventBus.publish(EventBus.Events.TOWER_DAMAGED, 
+                    enemy.towers[1], -- The tower
+                    nil, -- No attacker (effect damage)
+                    2, -- Damage amount
+                    oldHealth, -- Old health
+                    enemy.towers[1].hp -- New health
+                )
             end
         end
     }
