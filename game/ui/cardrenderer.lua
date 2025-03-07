@@ -5,7 +5,8 @@
 -- - Yellow attack circle (bottom left)
 -- - Red health circle (bottom right)
 -- - Card name in custom font (positioned lower)
--- - Card text area (middle)
+-- - Card text area for effects (middle)
+-- - Archetype text (for minions) just above the card type banner
 -- - Card type at the very bottom (centered)
 
 local CardRenderer = {}
@@ -32,7 +33,7 @@ local COLORS = {
     statText = {1, 1, 1, 1},               -- White text for stats
     cardName = {1, 0.95, 0.8, 1},          -- Light cream for card name
     cardText = {0.9, 0.9, 0.9, 1},         -- Light gray for card text
-    cardType = {0.7, 0.7, 0.8, 1},         -- Light blue-gray for card type
+    cardType = {0.7, 0.7, 0.8, 1},         -- Light blue-gray for card type and archetype text
     typeBanner = {0.25, 0.25, 0.3, 1},     -- Dark banner for card type
     glowPlayable = {0, 1, 0, 0.3}          -- Green glow for playable cards
 }
@@ -45,7 +46,7 @@ local function getCardFonts()
     local statFont = love.graphics.newFont(13)
     -- Font for card text
     local textFont = love.graphics.newFont(10)
-    -- Small font for card type
+    -- Small font for card type and archetype text
     local typeFont = love.graphics.newFont(9)
     
     return {
@@ -84,15 +85,15 @@ local function drawStatCircle(x, y, value, circleColor, bgColor)
     -- Calculate text position for proper centering
     local textWidth = font:getWidth(valueStr)
     local textHeight = font:getHeight()
-    local textX = x - textWidth/2
-    local textY = y - textHeight/2
+    local textX = x - textWidth / 2
+    local textY = y - textHeight / 2
     
     -- Draw black outline by drawing text multiple times with slight offsets
     love.graphics.setColor(0, 0, 0, 1)
-    love.graphics.print(valueStr, textX-1, textY)
-    love.graphics.print(valueStr, textX+1, textY)
-    love.graphics.print(valueStr, textX, textY-1)
-    love.graphics.print(valueStr, textX, textY+1)
+    love.graphics.print(valueStr, textX - 1, textY)
+    love.graphics.print(valueStr, textX + 1, textY)
+    love.graphics.print(valueStr, textX, textY - 1)
+    love.graphics.print(valueStr, textX, textY + 1)
     
     -- Draw the main text on top
     love.graphics.setColor(COLORS.statText)
@@ -100,18 +101,17 @@ local function drawStatCircle(x, y, value, circleColor, bgColor)
 end
 
 --------------------------------------------------
--- getCardEffectText: Get appropriate text for card
+-- getCardEffectText: Get appropriate text for card effects
+-- For Minions, only return battlecry/deathrattle text if present.
 --------------------------------------------------
 local function getCardEffectText(card)
-    -- For now, just return placeholder text based on card type
-    -- In a full implementation, you'd get this from card data
     if card.cardType == "Minion" then
         if card.battlecry then
-            return "Battlecry: Draw a card"
+            return "Battlecry: Draw a card"  -- Example text; adjust as needed
         elseif card.deathrattle then
-            return "Deathrattle: Deal 2 damage"
+            return "Deathrattle: Deal 2 damage"  -- Example text; adjust as needed
         else
-            return card.archetype or ""
+            return ""  -- Do not show archetype here; it will be rendered separately
         end
     elseif card.cardType == "Spell" then
         return "Deal 6 damage to enemy hero"
@@ -137,36 +137,33 @@ function CardRenderer.drawCard(card, x, y, isPlayable)
         local glowOffset = 6
         love.graphics.setColor(COLORS.glowPlayable)
         love.graphics.rectangle("fill", 
-                               x - glowOffset, 
-                               y - glowOffset, 
-                               CARD_WIDTH + glowOffset * 2, 
-                               CARD_HEIGHT + glowOffset * 2, 
-                               CARD_CORNER_RADIUS + 2)
+                                x - glowOffset, 
+                                y - glowOffset, 
+                                CARD_WIDTH + glowOffset * 2, 
+                                CARD_HEIGHT + glowOffset * 2, 
+                                CARD_CORNER_RADIUS + 2)
     end
 
     --------------------------------------------------
     -- 1. Card background and border
     --------------------------------------------------
-    -- Outer border (slightly rounded rectangle)
     love.graphics.setColor(COLORS.border)
     love.graphics.rectangle("fill", x, y, CARD_WIDTH, CARD_HEIGHT, CARD_CORNER_RADIUS)
     
-    -- Inner background (inset by 3px on all sides)
     love.graphics.setColor(COLORS.background)
     love.graphics.rectangle("fill", 
-                           x + 3, 
-                           y + 3, 
-                           CARD_WIDTH - 6, 
-                           CARD_HEIGHT - 6, 
-                           CARD_CORNER_RADIUS - 2)
+                            x + 3, 
+                            y + 3, 
+                            CARD_WIDTH - 6, 
+                            CARD_HEIGHT - 6, 
+                            CARD_CORNER_RADIUS - 2)
     
-    -- Inner frame for the card content
     love.graphics.setColor(COLORS.innerBorder)
     love.graphics.rectangle("fill",
-                           x + 8,
-                           y + 40, -- Moved down more to accommodate lower card name
-                           CARD_WIDTH - 16,
-                           CARD_HEIGHT - 60) -- Shorter to make room for type at bottom
+                            x + 8,
+                            y + 40, -- Moved down more to accommodate lower card name
+                            CARD_WIDTH - 16,
+                            CARD_HEIGHT - 60) -- Shorter to make room for type at bottom
 
     --------------------------------------------------
     -- 2. Card Name (in fancy font, positioned lower)
@@ -174,96 +171,105 @@ function CardRenderer.drawCard(card, x, y, isPlayable)
     love.graphics.setFont(cardFonts.name)
     love.graphics.setColor(COLORS.cardName)
     love.graphics.printf(card.name, 
-                        x + 10, 
-                        y + 24, -- Moved down further as requested
-                        CARD_WIDTH - 20, 
-                        "center")
+                         x + 10, 
+                         y + 24, -- Moved down further as requested
+                         CARD_WIDTH - 20, 
+                         "center")
 
     --------------------------------------------------
-    -- 3. Card Text Area
+    -- 3. Card Text Area (for battlecry, deathrattle, etc.)
     --------------------------------------------------
     local cardText = getCardEffectText(card)
     if cardText and cardText ~= "" then
         love.graphics.setFont(cardFonts.text)
         love.graphics.setColor(COLORS.cardText)
-        -- Position text in the middle area of the card
         love.graphics.printf(cardText,
-                           x + 15,
-                           y + 75, -- Adjusted for new layout
-                           CARD_WIDTH - 30,
-                           "center")
+                             x + 15,
+                             y + 75, -- Adjusted for new layout
+                             CARD_WIDTH - 30,
+                             "center")
+    end
+
+    --------------------------------------------------
+    -- 3.5 Archetype Text for Minions
+    -- Render archetype text just above the card type banner if available.
+    --------------------------------------------------
+    if card.cardType == "Minion" and card.archetype and card.archetype ~= "" then
+        love.graphics.setFont(cardFonts.type)
+        love.graphics.setColor(COLORS.cardType)
+        love.graphics.printf(card.archetype,
+                             x + 3,
+                             y + CARD_HEIGHT - 35,  -- Position adjusted for archetype text
+                             CARD_WIDTH - 6,
+                             "center")
     end
 
     --------------------------------------------------
     -- 4. Card Type at bottom
     --------------------------------------------------
-    -- Draw a small banner for the card type at the very bottom
     love.graphics.setColor(COLORS.typeBanner)
     love.graphics.rectangle("fill",
-                           x + 3,
-                           y + CARD_HEIGHT - 18,
-                           CARD_WIDTH - 6,
-                           15,
-                           3)
+                            x + 3,
+                            y + CARD_HEIGHT - 18,
+                            CARD_WIDTH - 6,
+                            15,
+                            3)
     
-    -- Card type text
     love.graphics.setFont(cardFonts.type)
     love.graphics.setColor(COLORS.cardType)
     love.graphics.printf(card.cardType, 
-                        x + 3,
-                        y + CARD_HEIGHT - 17,
-                        CARD_WIDTH - 6,
-                        "center")
+                         x + 3,
+                         y + CARD_HEIGHT - 17,
+                         CARD_WIDTH - 6,
+                         "center")
 
     --------------------------------------------------
     -- 5. Stat Circles (drawn last to be on top layer)
     --------------------------------------------------
-    -- Position the circles in the corners with padding
     local padX = 18
     local padY = 18
     
     -- Mana cost (top left, blue)
     drawStatCircle(x + padX, 
-                  y + padY, 
-                  card.cost, 
-                  COLORS.manaCircle, 
-                  COLORS.manaBg)
+                   y + padY, 
+                   card.cost, 
+                   COLORS.manaCircle, 
+                   COLORS.manaBg)
     
-    -- For Minions and some other cards, draw additional stats
     if card.cardType == "Minion" then
         -- Movement (top right, white)
         drawStatCircle(x + CARD_WIDTH - padX, 
-                      y + padY, 
-                      card.movement or 1, 
-                      COLORS.movementCircle, 
-                      COLORS.movementBg)
+                       y + padY, 
+                       card.movement or 1, 
+                       COLORS.movementCircle, 
+                       COLORS.movementBg)
                       
         -- Attack (bottom left, yellow)
         drawStatCircle(x + padX, 
-                      y + CARD_HEIGHT - padY, 
-                      card.attack, 
-                      COLORS.attackCircle, 
-                      COLORS.attackBg)
+                       y + CARD_HEIGHT - padY, 
+                       card.attack, 
+                       COLORS.attackCircle, 
+                       COLORS.attackBg)
                       
         -- Health (bottom right, red)
         drawStatCircle(x + CARD_WIDTH - padX, 
-                      y + CARD_HEIGHT - padY, 
-                      card.health, 
-                      COLORS.healthCircle, 
-                      COLORS.healthBg)
+                       y + CARD_HEIGHT - padY, 
+                       card.health, 
+                       COLORS.healthCircle, 
+                       COLORS.healthBg)
     elseif card.cardType == "Weapon" then
         -- For weapons, display attack and durability
         drawStatCircle(x + padX, 
-                      y + CARD_HEIGHT - padY, 
-                      card.attack, 
-                      COLORS.attackCircle, 
-                      COLORS.attackBg)
+                       y + CARD_HEIGHT - padY, 
+                       card.attack, 
+                       COLORS.attackCircle, 
+                       COLORS.attackBg)
                       
         drawStatCircle(x + CARD_WIDTH - padX, 
-                      y + CARD_HEIGHT - padY, 
-                      card.durability, 
-                      COLORS.healthCircle, 
-                      COLORS.healthBg)
+                       y + CARD_HEIGHT - padY, 
+                       card.durability, 
+                       COLORS.healthCircle, 
+                       COLORS.healthBg)
     end
 
     -- Reset color and font
