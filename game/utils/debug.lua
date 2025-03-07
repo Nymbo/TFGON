@@ -1,31 +1,87 @@
 -- game/utils/debug.lua
--- Custom debugging utilities to help catch runtime errors
+-- Custom debugging utilities merged with log.lua-inspired features
 
 local Debug = {}
 
--- Set this to false in production
+--------------------------------------------------
+-- Configuration
+--------------------------------------------------
+
+-- Master switch for debugging; set this to false in production
 Debug.ENABLED = true
 
--- Log levels
-Debug.LEVELS = {
-    INFO = 1,
-    WARNING = 2,
-    ERROR = 3,
-    CRITICAL = 4
-}  -- Fixed: replaced 'end' with '}'
+-- Enables or disables ANSI color codes in console logs
+Debug.usecolor = true
 
+-- If set to a string (e.g. "debug.log"), logs will be appended to that file
+Debug.outfile = nil
+
+--------------------------------------------------
+-- Log Levels
+--------------------------------------------------
+Debug.LEVELS = {
+    INFO     = 1,
+    WARNING  = 2,
+    ERROR    = 3,
+    CRITICAL = 4
+}
 -- Current logging level
 Debug.CURRENT_LEVEL = Debug.LEVELS.INFO
 
+--------------------------------------------------
+-- Internal color codes for each level
+-- (Extend or change these as you like)
+--------------------------------------------------
+local levelColors = {
+    [Debug.LEVELS.INFO]     = "\27[32m", -- Green
+    [Debug.LEVELS.WARNING]  = "\27[33m", -- Yellow
+    [Debug.LEVELS.ERROR]    = "\27[31m", -- Red
+    [Debug.LEVELS.CRITICAL] = "\27[35m", -- Magenta
+}
+
+--------------------------------------------------
+-- State / Storage
+--------------------------------------------------
 -- Call trace history (for tracking execution paths)
 Debug.callTrace = {}
 
 -- Error log (for recording errors)
 Debug.errorLog = {}
 
--- Initialize debug mode based on environment
+--------------------------------------------------
+-- Utility for rounding numbers in logs
+--------------------------------------------------
+local function round(x, increment)
+    increment = increment or 1
+    x = x / increment
+    if x > 0 then
+        return math.floor(x + 0.5) * increment
+    else
+        return math.ceil(x - 0.5) * increment
+    end
+end
+
+--------------------------------------------------
+-- Enhanced tostring that rounds numbers
+--------------------------------------------------
+local originalTostring = tostring
+local function betterTostring(...)
+    local parts = {}
+    for i = 1, select('#', ...) do
+        local val = select(i, ...)
+        if type(val) == "number" then
+            -- Round to 2 decimal places
+            val = round(val, 0.01)
+        end
+        parts[#parts + 1] = originalTostring(val)
+    end
+    return table.concat(parts, " ")
+end
+
+--------------------------------------------------
+-- Initialize debug mode (checks debug_mode.txt)
+--------------------------------------------------
 function Debug.init()
-    -- Check if we're in development or production
     if love.filesystem.getInfo("debug_mode.txt") then
         Debug.ENABLED = true
     else
@@ -33,75 +89,95 @@ function Debug.init()
         Debug.ENABLED = true
     end
     
-    -- Add timestamp to call trace
     Debug.addToCallTrace("Debug system initialized")
 end
 
--- Log a message at specified level
+--------------------------------------------------
+-- Master logging function
+--------------------------------------------------
 function Debug.log(message, level)
     level = level or Debug.LEVELS.INFO
     
+    -- Bail out if debug is disabled or level is below the current threshold
     if not Debug.ENABLED or level < Debug.CURRENT_LEVEL then
         return
     end
-    
+
     local levelNames = {
-        [Debug.LEVELS.INFO] = "INFO",
-        [Debug.LEVELS.WARNING] = "WARNING",
-        [Debug.LEVELS.ERROR] = "ERROR",
+        [Debug.LEVELS.INFO]     = "INFO",
+        [Debug.LEVELS.WARNING]  = "WARNING",
+        [Debug.LEVELS.ERROR]    = "ERROR",
         [Debug.LEVELS.CRITICAL] = "CRITICAL"
     }
-    
+
+    -- Convert message(s) to a nicely formatted string
+    local msg = betterTostring(message)
     local timestamp = os.date("%H:%M:%S")
-    local logString = string.format("[%s] %s: %s", 
-                                   timestamp, 
-                                   levelNames[level] or "UNKNOWN", 
-                                   tostring(message))
-    
-    print(logString)
-    
-    -- Add to error log if this is an error or critical message
+    local levelName = levelNames[level] or "UNKNOWN"
+
+    -- Build the console log line
+    local consoleLine
+    if Debug.usecolor then
+        local colorCode = levelColors[level] or ""
+        consoleLine = string.format("%s[%s] %s: %s\27[0m", colorCode, timestamp, levelName, msg)
+    else
+        consoleLine = string.format("[%s] %s: %s", timestamp, levelName, msg)
+    end
+
+    -- Print to the console
+    print(consoleLine)
+
+    -- If it's an error or above, add to errorLog
     if level >= Debug.LEVELS.ERROR then
         table.insert(Debug.errorLog, {
             timestamp = timestamp,
             level = level,
-            message = message
+            message = msg
         })
+    end
+
+    -- Optionally write to file
+    if Debug.outfile then
+        local fp = io.open(Debug.outfile, "a")
+        if fp then
+            -- Use full date/time in file logs
+            local fullDate = os.date()
+            local fileLine = string.format("[%s %s] %s\n", fullDate, levelName, msg)
+            fp:write(fileLine)
+            fp:close()
+        end
     end
 end
 
--- Log info message
+--------------------------------------------------
+-- Helper Logging Methods
+--------------------------------------------------
 function Debug.info(message)
     Debug.log(message, Debug.LEVELS.INFO)
 end
 
--- Log warning message
 function Debug.warn(message)
     Debug.log(message, Debug.LEVELS.WARNING)
 end
 
--- Log error message
 function Debug.error(message)
     Debug.log(message, Debug.LEVELS.ERROR)
-    
-    -- Add to call trace
     Debug.addToCallTrace("ERROR: " .. tostring(message))
 end
 
--- Log critical error message
 function Debug.critical(message)
     Debug.log(message, Debug.LEVELS.CRITICAL)
-    
-    -- Add to call trace
     Debug.addToCallTrace("CRITICAL: " .. tostring(message))
     
-    -- In development mode, you might want to raise an error
+    -- In dev mode, raise an error
     if Debug.ENABLED then
         error(message)
     end
 end
 
--- Add an entry to the call trace
+--------------------------------------------------
+-- Call Trace
+--------------------------------------------------
 function Debug.addToCallTrace(functionName)
     if not Debug.ENABLED then
         return
@@ -119,7 +195,22 @@ function Debug.addToCallTrace(functionName)
     end
 end
 
+function Debug.printCallTrace()
+    if #Debug.callTrace == 0 then
+        print("Call trace is empty")
+        return
+    end
+    
+    print("\n=== CALL TRACE ===")
+    for i, call in ipairs(Debug.callTrace) do
+        print(string.format("%d. [%s] %s", i, call.time, call.name))
+    end
+    print("==================\n")
+end
+
+--------------------------------------------------
 -- Safe function calling with error handling
+--------------------------------------------------
 function Debug.safeCall(func, ...)
     if not Debug.ENABLED then
         return func(...)
@@ -137,7 +228,9 @@ function Debug.safeCall(func, ...)
     return result
 end
 
--- Trace function entry (for tracking execution flow)
+--------------------------------------------------
+-- Function entry/exit tracing
+--------------------------------------------------
 function Debug.traceFunction(functionName)
     if not Debug.ENABLED then
         return function() end
@@ -149,18 +242,17 @@ function Debug.traceFunction(functionName)
     end
 end
 
--- Function to catch errors and provide detailed reports
+--------------------------------------------------
+-- Try/Catch
+--------------------------------------------------
 function Debug.tryCatch(tryFunc, catchFunc)
     if not Debug.ENABLED then
-        -- In production, just run the function normally
         return tryFunc()
     end
     
     local status, result = pcall(tryFunc)
     if not status then
-        -- An error occurred
         Debug.error("Caught error: " .. tostring(result))
-        
         if type(catchFunc) == "function" then
             return catchFunc(result)
         end
@@ -168,7 +260,9 @@ function Debug.tryCatch(tryFunc, catchFunc)
     return result
 end
 
--- Dump table contents for debugging
+--------------------------------------------------
+-- Table Dump
+--------------------------------------------------
 function Debug.dumpTable(tbl, indent, maxDepth)
     if not Debug.ENABLED then
         return "Debug disabled"
@@ -189,10 +283,10 @@ function Debug.dumpTable(tbl, indent, maxDepth)
     for k, v in pairs(tbl) do
         local formatting = string.rep("  ", indent + 1)
         if type(v) == "table" then
-            str = str .. formatting .. tostring(k) .. " = " .. 
+            str = str .. formatting .. tostring(k) .. " = " ..
                   Debug.dumpTable(v, indent + 1, maxDepth) .. "\n"
         else
-            str = str .. formatting .. tostring(k) .. " = " .. 
+            str = str .. formatting .. tostring(k) .. " = " ..
                   tostring(v) .. "\n"
         end
     end
@@ -200,21 +294,9 @@ function Debug.dumpTable(tbl, indent, maxDepth)
     return str
 end
 
--- Print the call trace (useful for debugging)
-function Debug.printCallTrace()
-    if #Debug.callTrace == 0 then
-        print("Call trace is empty")
-        return
-    end
-    
-    print("\n=== CALL TRACE ===")
-    for i, call in ipairs(Debug.callTrace) do
-        print(string.format("%d. [%s] %s", i, call.time, call.name))
-    end
-    print("==================\n")
-end
-
--- Print error log
+--------------------------------------------------
+-- Print Error Log
+--------------------------------------------------
 function Debug.printErrorLog()
     if #Debug.errorLog == 0 then
         print("Error log is empty")
@@ -224,20 +306,30 @@ function Debug.printErrorLog()
     print("\n=== ERROR LOG ===")
     for i, err in ipairs(Debug.errorLog) do
         local levelNames = {
-            [Debug.LEVELS.ERROR] = "ERROR",
+            [Debug.LEVELS.ERROR]    = "ERROR",
             [Debug.LEVELS.CRITICAL] = "CRITICAL"
         }
-        print(string.format("%d. [%s] %s: %s", 
-                           i, 
-                           err.timestamp, 
-                           levelNames[err.level] or "UNKNOWN", 
-                           tostring(err.message)))
+        print(string.format("%d. [%s] %s: %s",
+            i,
+            err.timestamp,
+            levelNames[err.level] or "UNKNOWN",
+            tostring(err.message)))
     end
     print("=================\n")
 end
 
--- Check for memory leaks
+--------------------------------------------------
+-- Memory Check
+-- Now prints memory usage only once every 5 minutes
+--------------------------------------------------
 function Debug.checkMemory()
+    local currentTime = love.timer.getTime()
+    Debug.lastMemoryCheckTime = Debug.lastMemoryCheckTime or 0
+    if currentTime - Debug.lastMemoryCheckTime < 300 then
+        return
+    end
+    Debug.lastMemoryCheckTime = currentTime
+
     local before = collectgarbage("count")
     collectgarbage("collect")
     local after = collectgarbage("count")
@@ -246,26 +338,25 @@ function Debug.checkMemory()
                            before, after, before - after))
 end
 
--- Modify main.lua to include our debugging system
+--------------------------------------------------
+-- Install a custom error handler that logs errors
+--------------------------------------------------
 function Debug.installErrorHandler()
-    -- Save the original error handler
     local originalErrorHandler = love.errorhandler or love.errhand
     
-    -- Create a new error handler that logs errors
     love.errorhandler = function(msg)
         Debug.critical("LOVE Error: " .. tostring(msg))
         Debug.printCallTrace()
         Debug.printErrorLog()
         
-        -- Call the original handler
         return originalErrorHandler(msg)
     end
     
-    -- Log that we installed the handler
     Debug.info("Debug error handler installed")
 end
 
--- Initialize the debug system
+--------------------------------------------------
+-- Initialize and return
+--------------------------------------------------
 Debug.init()
-
 return Debug
