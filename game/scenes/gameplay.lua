@@ -11,10 +11,8 @@ local BoardRenderer = require("game.ui.boardrenderer")
 local AIManager = require("game.managers.aimanager")
 local Theme = require("game.ui.theme")
 local CardRenderer = require("game.ui.cardrenderer")
-local Animation = require("game.managers.animation")
 local EffectManager = require("game.managers.effectmanager")
 local EventBus = require("game.eventbus")
-local BannerSystem = require("game.ui.bannersystem")
 
 -- Local helper function to draw a themed button
 local function drawThemedButton(text, x, y, width, height, isHovered, isSelected)
@@ -109,9 +107,6 @@ function Gameplay:new(changeSceneCallback, selectedDeck, selectedBoard, aiOppone
     self.endTurnHovered = false
     self.selectedMinion = nil
 
-    -- Create banner system
-    self.bannerSystem = BannerSystem:new()
-
     -- Legacy callback to maintain compatibility
     self.gameManager.onTurnStart = function(whichPlayer)
         -- This is kept for backward compatibility but no longer sets banner properties
@@ -135,12 +130,6 @@ function Gameplay:new(changeSceneCallback, selectedDeck, selectedBoard, aiOppone
     self.pendingEffectCardIndex = nil
     self.validTargets = {}
     
-    -- Animation state
-    self.animations = {
-        active = false,
-        queue = {}
-    }
-    
     -- Setup event subscriptions
     self:initEventSubscriptions()
     
@@ -158,7 +147,7 @@ function Gameplay:initEventSubscriptions()
     -- Clear any existing subscriptions
     self:clearEventSubscriptions()
     
-    -- Subscribe to turn events to display banners
+    -- Subscribe to turn events
     table.insert(self.eventSubscriptions, EventBus.subscribe(
         EventBus.Events.TURN_STARTED,
         function(player)
@@ -166,6 +155,7 @@ function Gameplay:initEventSubscriptions()
             local text = (player == self.gameManager.player1) and "YOUR TURN" or 
                        (self.aiOpponent and "AI OPPONENT'S TURN" or "OPPONENT'S TURN")
             
+            -- Simply publish the event - the banner display is handled elsewhere now
             EventBus.publish(EventBus.Events.BANNER_DISPLAYED, bannerType, text)
         end,
         "GameplayScene-BannerHandler"
@@ -190,7 +180,7 @@ function Gameplay:initEventSubscriptions()
     table.insert(self.eventSubscriptions, EventBus.subscribe(
         EventBus.Events.CARD_PLAYED,
         function(player, card)
-            -- Add animation for card played (future enhancement)
+            -- Add to animation queue (to be implemented with new animation system)
             self:queueAnimation("cardPlayed", {card = card, player = player})
         end,
         "GameplayScene-CardHandler"
@@ -200,7 +190,7 @@ function Gameplay:initEventSubscriptions()
     table.insert(self.eventSubscriptions, EventBus.subscribe(
         EventBus.Events.MINION_DAMAGED,
         function(minion, source, damage, oldHealth, newHealth)
-            -- Add animation for damage (future enhancement)
+            -- Add to animation queue (to be implemented with new animation system)
             self:queueAnimation("damage", {
                 target = minion, 
                 amount = damage,
@@ -213,7 +203,7 @@ function Gameplay:initEventSubscriptions()
     table.insert(self.eventSubscriptions, EventBus.subscribe(
         EventBus.Events.MINION_HEALED,
         function(minion, source, amount, oldHealth, newHealth)
-            -- Add animation for healing (future enhancement)
+            -- Add to animation queue (to be implemented with new animation system)
             self:queueAnimation("heal", {
                 target = minion, 
                 amount = amount,
@@ -226,7 +216,7 @@ function Gameplay:initEventSubscriptions()
     table.insert(self.eventSubscriptions, EventBus.subscribe(
         EventBus.Events.MINION_DIED,
         function(minion, killer)
-            -- Add animation for minion death (future enhancement)
+            -- Add to animation queue (to be implemented with new animation system)
             self:queueAnimation("death", {
                 minion = minion,
                 position = {x = minion.position.x, y = minion.position.y}
@@ -239,7 +229,7 @@ function Gameplay:initEventSubscriptions()
     table.insert(self.eventSubscriptions, EventBus.subscribe(
         EventBus.Events.TOWER_DAMAGED,
         function(tower, attacker, damage, oldHealth, newHealth)
-            -- Add animation for tower damage (future enhancement)
+            -- Add to animation queue (to be implemented with new animation system)
             self:queueAnimation("towerDamage", {
                 tower = tower,
                 amount = damage,
@@ -253,7 +243,7 @@ function Gameplay:initEventSubscriptions()
     table.insert(self.eventSubscriptions, EventBus.subscribe(
         EventBus.Events.EFFECT_TRIGGERED,
         function(effectType, player, target)
-            -- Handle visual feedback for effects (future enhancement)
+            -- Add to animation queue (to be implemented with new animation system)
             if effectType == "SpellCastFailed" or effectType == "WeaponEquipFailed" then
                 -- Show failure feedback
                 self:queueAnimation("effectFailed", {
@@ -269,7 +259,7 @@ function Gameplay:initEventSubscriptions()
     table.insert(self.eventSubscriptions, EventBus.subscribe(
         EventBus.Events.MINION_MOVED,
         function(minion, oldPosition, newPosition)
-            -- Animate minion movement (future enhancement)
+            -- Add to animation queue (to be implemented with new animation system)
             self:queueAnimation("movement", {
                 minion = minion,
                 from = oldPosition,
@@ -283,7 +273,7 @@ function Gameplay:initEventSubscriptions()
     table.insert(self.eventSubscriptions, EventBus.subscribe(
         EventBus.Events.PLAYER_MANA_CHANGED,
         function(player, oldValue, newValue)
-            -- Potentially animate mana changes (future enhancement)
+            -- Add to animation queue (to be implemented with new animation system)
             self:queueAnimation("manaChange", {
                 player = player,
                 oldValue = oldValue,
@@ -310,16 +300,13 @@ end
 -- This is a stub for future animation enhancements
 --------------------------------------------------
 function Gameplay:queueAnimation(animType, data)
-    table.insert(self.animations.queue, {type = animType, data = data})
-    -- Future enhancement: Process animation queue and show visual effects
+    -- This is now just a stub function that will be replaced with a new animation system
+    -- For now, we'll leave it as an empty function to avoid errors
 end
 
 function Gameplay:update(dt)
     self.gameManager:update(dt)
     self.endTurnHovered = InputSystem.checkEndTurnHover(self)
-
-    -- Update banner system
-    self.bannerSystem:update(dt)
 
     -- Handle AI turns with traditional timer (will migrate to events fully later)
     if self.aiOpponent and self.gameManager.currentPlayer == 2 and not self.showGameOverPopup then
@@ -332,9 +319,6 @@ function Gameplay:update(dt)
         end
     end
 
-    -- Update any active tweens.
-    Animation.update(dt)
-
     -- If a card is being dragged, update its position.
     if self.draggedCard then
         updateDraggedCard(self.draggedCard, dt)
@@ -344,9 +328,6 @@ function Gameplay:update(dt)
     if self.pendingEffect then
         self:updateValidTargets()
     end
-    
-    -- Process events in the animation queue (future enhancement)
-    -- This would play animations triggered by events
     
     -- Process EventBus events
     EventBus.update(dt)
@@ -448,8 +429,8 @@ function Gameplay:draw()
         self:drawTargetingIndicators()
     end
 
-    -- Draw the banner using the banner system
-    self.bannerSystem:draw()
+    -- Draw turn banners (will be reimplemented with a new system)
+    self:drawTurnBanner()
 
     if self.showGameOverPopup then
         self:drawGameOverPopup()
@@ -468,9 +449,18 @@ function Gameplay:draw()
         love.graphics.setColor(Theme.colors.textPrimary)
         love.graphics.printf(promptMessage, 0, 20, love.graphics.getWidth(), "center")
     end
+end
+
+-- Simple turn banner implementation to replace the BannerSystem
+function Gameplay:drawTurnBanner()
+    -- This is a minimal implementation to replace the banner system
+    -- We'll implement a more sophisticated system in the future
     
-    -- Draw any active animation effects (future enhancement)
-    -- This would render additional visual elements for events
+    -- For now, just display the current player's turn at the top
+    local turnText = "Player " .. self.gameManager.currentPlayer .. "'s Turn"
+    love.graphics.setFont(Theme.fonts.subtitle)
+    love.graphics.setColor(Theme.colors.textPrimary)
+    love.graphics.printf(turnText, 0, 30, love.graphics.getWidth(), "center")
 end
 
 -- Draw targeting indicators
@@ -737,11 +727,6 @@ end
 function Gameplay:destroy()
     -- Clean up our event subscriptions
     self:clearEventSubscriptions()
-    
-    -- Clean up banner system
-    if self.bannerSystem then
-        self.bannerSystem:destroy()
-    end
     
     -- Clean up AI manager if it exists
     if self.aiManager then

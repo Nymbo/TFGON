@@ -6,7 +6,6 @@
 local CardRenderer = require("game.ui.cardrenderer")
 local BoardRenderer = require("game.ui.boardrenderer")
 local Theme = require("game.ui.theme")
-local Animation = require("game.managers.animation")
 local EffectManager = require("game.managers.effectmanager") -- Added for target checking
 
 local END_TURN_BUTTON = {
