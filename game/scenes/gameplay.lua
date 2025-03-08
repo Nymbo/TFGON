@@ -429,8 +429,8 @@ function Gameplay:draw()
         self:drawTargetingIndicators()
     end
 
-    -- Draw turn banners (will be reimplemented with a new system)
-    self:drawTurnBanner()
+    -- Note: We no longer call drawTurnBanner() here since the turn indicator is 
+    -- already displayed by DrawSystem below the End Turn button
 
     if self.showGameOverPopup then
         self:drawGameOverPopup()
@@ -449,18 +449,6 @@ function Gameplay:draw()
         love.graphics.setColor(Theme.colors.textPrimary)
         love.graphics.printf(promptMessage, 0, 20, love.graphics.getWidth(), "center")
     end
-end
-
--- Simple turn banner implementation to replace the BannerSystem
-function Gameplay:drawTurnBanner()
-    -- This is a minimal implementation to replace the banner system
-    -- We'll implement a more sophisticated system in the future
-    
-    -- For now, just display the current player's turn at the top
-    local turnText = "Player " .. self.gameManager.currentPlayer .. "'s Turn"
-    love.graphics.setFont(Theme.fonts.subtitle)
-    love.graphics.setColor(Theme.colors.textPrimary)
-    love.graphics.printf(turnText, 0, 30, love.graphics.getWidth(), "center")
 end
 
 -- Draw targeting indicators
