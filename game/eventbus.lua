@@ -2,6 +2,7 @@
 -- A central event bus system for The Fine Game of Nil
 -- Implements publish/subscribe pattern to decouple game components
 -- Includes integration with Debug utility for better diagnostics
+-- UPDATED WITH IMPROVED ERROR HANDLING
 
 local Debug = require("game.utils.debug")
 local EventBus = {}
@@ -51,6 +52,8 @@ EventBus.Events = {
     -- Player events
     PLAYER_MANA_CHANGED = "player:manaChanged",
     PLAYER_HERO_ATTACKED = "player:heroAttacked",
+    PLAYER_TURN_STARTED = "player:turnStarted",
+    PLAYER_TURN_ENDED = "player:turnEnded",
     
     -- AI events
     AI_TURN_STARTED = "ai:turnStarted",
@@ -77,6 +80,7 @@ EventBus.Events = {
     
     -- Menu/Scene events
     SCENE_CHANGED = "scene:changed",
+    SCENE_EXITED = "scene:exited",
     MENU_OPENED = "menu:opened",
     MENU_CLOSED = "menu:closed",
     
@@ -129,27 +133,21 @@ local function callSubscribers(eventName, targetEventName, arg1, arg2, arg3, arg
     
     for i, subscriber in pairs(subscribers[eventName]) do
         if subscriber then
-            -- Use Debug.safeCall for improved error handling
-            local exitTrace = Debug.traceFunction("EventBus: " .. targetEventName .. " -> " .. subscriber.name)
-            
-            local success, err = Debug.tryCatch(
-                function()
-                    if eventName == "*" then
-                        -- For catch-all subscribers, pass the event name as first parameter
-                        subscriber.callback(targetEventName, arg1, arg2, arg3, arg4, arg5)
-                    else
-                        -- For normal subscribers, just pass the parameters
-                        subscriber.callback(arg1, arg2, arg3, arg4, arg5)
-                    end
+            -- Use pcall for improved error handling
+            local success, err = pcall(function()
+                if eventName == "*" then
+                    -- For catch-all subscribers, pass the event name as first parameter
+                    subscriber.callback(targetEventName, arg1, arg2, arg3, arg4, arg5)
+                else
+                    -- For normal subscribers, just pass the parameters
+                    subscriber.callback(arg1, arg2, arg3, arg4, arg5)
                 end
-            )
+            end)
             
             if not success then
                 Debug.error(string.format("[EventBus] Error in '%s' subscriber for '%s': %s", 
                                     subscriber.name, eventName, tostring(err)))
             end
-            
-            exitTrace() -- Mark function exit in trace
         end
     end
 end
@@ -158,12 +156,12 @@ end
 function EventBus.subscribe(eventName, callback, subscriberName, priority)
     if not eventName then
         Debug.error("EventBus: Cannot subscribe to nil event name")
-        error("Cannot subscribe to nil event name")
+        return nil
     end
     
     if not callback or type(callback) ~= "function" then
         Debug.error("EventBus: Callback must be a function")
-        error("Callback must be a function")
+        return nil
     end
     
     -- Initialize subscriber list for this event if needed
@@ -200,7 +198,7 @@ end
 function EventBus.unsubscribe(handle)
     if not handle or not handle.eventName or not handle.index then
         Debug.error("EventBus: Invalid unsubscribe handle")
-        error("Invalid unsubscribe handle")
+        return false
     end
     
     local eventSubs = subscribers[handle.eventName]
@@ -229,11 +227,8 @@ end
 function EventBus.publish(eventName, arg1, arg2, arg3, arg4, arg5)
     if not eventName then
         Debug.error("EventBus: Cannot publish nil event name")
-        error("Cannot publish nil event name")
+        return
     end
-    
-    -- Add publish event to trace
-    local exitTrace = Debug.traceFunction("EventBus: Publishing " .. eventName)
     
     -- Record in event log if debug mode is on
     if debugMode then
@@ -256,25 +251,30 @@ function EventBus.publish(eventName, arg1, arg2, arg3, arg4, arg5)
         end
     end
     
-    -- Call specific event subscribers
-    callSubscribers(eventName, eventName, arg1, arg2, arg3, arg4, arg5)
+    -- Use pcall for safer event handling
+    local success, err = pcall(function()
+        -- Call specific event subscribers
+        callSubscribers(eventName, eventName, arg1, arg2, arg3, arg4, arg5)
+        
+        -- Call catch-all subscribers
+        callSubscribers("*", eventName, arg1, arg2, arg3, arg4, arg5)
+    end)
     
-    -- Call catch-all subscribers
-    callSubscribers("*", eventName, arg1, arg2, arg3, arg4, arg5)
-    
-    exitTrace() -- Mark function exit in trace
+    if not success then
+        Debug.error("[EventBus] Error publishing event '" .. eventName .. "': " .. tostring(err))
+    end
 end
 
 -- Publish an event to a specific queue (for prioritized handling)
 function EventBus.publishToQueue(queueName, eventName, arg1, arg2, arg3, arg4, arg5)
     if not queueName or not queues[queueName] then
         Debug.error("EventBus: Invalid queue name: " .. tostring(queueName))
-        error("Invalid queue name: " .. tostring(queueName))
+        return
     end
     
     if not eventName then
         Debug.error("EventBus: Cannot publish nil event name")
-        error("Cannot publish nil event name")
+        return
     end
     
     -- Store event in the specified queue
@@ -293,12 +293,12 @@ end
 function EventBus.publishDelayed(eventName, delay, arg1, arg2, arg3, arg4, arg5)
     if not eventName then
         Debug.error("EventBus: Cannot publish nil event name")
-        error("Cannot publish nil event name")
+        return
     end
     
     if not delay or type(delay) ~= "number" or delay < 0 then
         Debug.error("EventBus: Delay must be a positive number")
-        error("Delay must be a positive number")
+        return
     end
     
     -- Store event with timing information
@@ -318,7 +318,7 @@ end
 function EventBus.publishSequence(sequence)
     if not sequence or type(sequence) ~= "table" or #sequence == 0 then
         Debug.error("EventBus: Sequence must be a non-empty table")
-        error("Sequence must be a non-empty table")
+        return
     end
     
     -- Create a new sequence object
@@ -352,75 +352,73 @@ end
 
 -- Process all queues (call in your game's update loop)
 function EventBus.update(dt)
-    local updateTrace = Debug.traceFunction("EventBus.update")
-    
-    local currentTime = love.timer.getTime()
-    lastUpdateTime = currentTime
-    
-    -- Process delayed events
-    local i = 1
-    while i <= #delayedEvents do
-        local event = delayedEvents[i]
-        if event.publishTime <= currentTime then
-            -- Time to publish this event
-            local params = event.params
-            EventBus.publish(event.name, params[1], params[2], params[3], params[4], params[5])
-            table.remove(delayedEvents, i)
-        else
-            i = i + 1
-        end
-    end
-    
-    -- Process event sequences
-    i = 1
-    while i <= #pendingSequences do
-        local seq = pendingSequences[i]
+    -- Use pcall for safer event processing
+    local success, err = pcall(function()
+        local currentTime = love.timer.getTime()
+        lastUpdateTime = currentTime
         
-        -- Check if it's time for the next event
-        local nextIndex = seq.currentIndex + 1
-        if nextIndex <= #seq.events then
-            local nextEvent = seq.events[nextIndex]
-            
-            if not nextEvent.delay or currentTime >= seq.lastEventTime + nextEvent.delay then
-                -- Time to publish this event in the sequence
-                local params = nextEvent.params or {}
-                EventBus.publish(nextEvent.name, params[1], params[2], params[3], params[4], params[5])
-                seq.currentIndex = nextIndex
-                seq.lastEventTime = currentTime
+        -- Process delayed events
+        local i = 1
+        while i <= #delayedEvents do
+            local event = delayedEvents[i]
+            if event.publishTime <= currentTime then
+                -- Time to publish this event
+                local params = event.params
+                EventBus.publish(event.name, params[1], params[2], params[3], params[4], params[5])
+                table.remove(delayedEvents, i)
+            else
+                i = i + 1
             end
-            
-            i = i + 1
-        else
-            -- Sequence is completed
-            table.remove(pendingSequences, i)
         end
-    end
-    
-    -- Process queues in priority order
-    local priorityOrder = {"high", "game", "ui", "animation", "low"}
-    for _, queueName in ipairs(priorityOrder) do
-        local queue = queues[queueName]
         
-        while #queue > 0 do
-            local event = table.remove(queue, 1)
-            local params = event.params
+        -- Process event sequences
+        i = 1
+        while i <= #pendingSequences do
+            local seq = pendingSequences[i]
             
-            -- Add trace info for queue processing
-            if debugMode and #queue > 5 then
-                Debug.info(string.format("[EventBus] Processing queue '%s' - %d events remaining", 
-                            queueName, #queue))
+            -- Check if it's time for the next event
+            local nextIndex = seq.currentIndex + 1
+            if nextIndex <= #seq.events then
+                local nextEvent = seq.events[nextIndex]
+                
+                if not nextEvent.delay or currentTime >= seq.lastEventTime + nextEvent.delay then
+                    -- Time to publish this event in the sequence
+                    local params = nextEvent.params or {}
+                    EventBus.publish(nextEvent.name, params[1], params[2], params[3], params[4], params[5])
+                    seq.currentIndex = nextIndex
+                    seq.lastEventTime = currentTime
+                end
+                
+                i = i + 1
+            else
+                -- Sequence is completed
+                table.remove(pendingSequences, i)
             end
-            
-            EventBus.publish(event.name, params[1], params[2], params[3], params[4], params[5])
         end
-    end
+        
+        -- Process queues in priority order
+        local priorityOrder = {"high", "game", "ui", "animation", "low"}
+        for _, queueName in ipairs(priorityOrder) do
+            local queue = queues[queueName]
+            
+            while #queue > 0 do
+                local event = table.remove(queue, 1)
+                local params = event.params
+                
+                -- Add trace info for queue processing
+                if debugMode and #queue > 5 then
+                    Debug.info(string.format("[EventBus] Processing queue '%s' - %d events remaining", 
+                                queueName, #queue))
+                end
+                
+                EventBus.publish(event.name, params[1], params[2], params[3], params[4], params[5])
+            end
+        end
+    end)
     
-    -- Occasionally check memory usage in debug mode
-    if debugMode and love.math and love.math.random() < 0.01 then
-        Debug.checkMemory()
+    if not success then
+        Debug.error("[EventBus] Error in update: " .. tostring(err))
     end
-    
-    updateTrace() -- Mark function exit in trace
 end
 
 -- Get the number of pending events (useful for waiting for animations)
@@ -447,7 +445,7 @@ end
 function EventBus.setEventQueue(eventName, queueName)
     if not queues[queueName] then
         Debug.error("EventBus: Invalid queue name: " .. tostring(queueName))
-        error("Invalid queue name: " .. tostring(queueName))
+        return
     end
     
     -- This will be used when events are published

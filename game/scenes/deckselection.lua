@@ -1,6 +1,7 @@
 -- game/scenes/deckselection.lua
 -- Deck selection scene with unified Theme styling and board selection
 -- Now with AI opponent option
+-- UPDATED with error logging
 
 local DeckSelection = {}
 DeckSelection.__index = DeckSelection
@@ -8,12 +9,16 @@ DeckSelection.__index = DeckSelection
 local DeckManager = require("game.managers.deckmanager")
 local BoardRegistry = require("game.core.boardregistry")
 local Theme = require("game.ui.theme")
+local ErrorLog = require("game.utils.errorlog")
 
 --------------------------------------------------
 -- Constructor for the DeckSelection scene
 --------------------------------------------------
 function DeckSelection:new(changeSceneCallback)
     local self = setmetatable({}, DeckSelection)
+    
+    ErrorLog.logError("DeckSelection scene initialization started", true)
+    
     self.changeSceneCallback = changeSceneCallback
     
     -- Ensure decks are loaded
@@ -29,7 +34,18 @@ function DeckSelection:new(changeSceneCallback)
     self.aiOpponent = true  -- Default to enabled
 
     -- Load background image
-    self.background = love.graphics.newImage("assets/images/mainmenu_background.png")
+    local bgPath = "assets/images/mainmenu_background.png"
+    if love.filesystem.getInfo(bgPath) then
+        ErrorLog.logError("Loading background image: " .. bgPath, true)
+        self.background = love.graphics.newImage(bgPath)
+    else
+        ErrorLog.logError("Background image not found: " .. bgPath)
+        -- Create a placeholder background
+        self.background = love.graphics.newCanvas(800, 600)
+        love.graphics.setCanvas(self.background)
+        love.graphics.clear(0.1, 0.1, 0.1, 1)
+        love.graphics.setCanvas()
+    end
 
     -- Screen dimensions
     self.screenWidth = love.graphics.getWidth()
@@ -53,6 +69,8 @@ function DeckSelection:new(changeSceneCallback)
     self.boardItemRadius = 40
     self.boardHoveredIndex = nil
 
+    ErrorLog.logError("DeckSelection scene initialized successfully", true)
+    
     return self
 end
 
@@ -163,7 +181,7 @@ function DeckSelection:drawThemedButton(text, x, y, width, height, isHovered)
 end
 
 --------------------------------------------------
--- Helper: Draw scaled background image
+-- Helper: Draw scaled background
 --------------------------------------------------
 function DeckSelection:drawScaledBackground()
     local bgW, bgH = self.background:getWidth(), self.background:getHeight()
@@ -400,8 +418,24 @@ function DeckSelection:mousepressed(x, y, button, istouch, presses)
 
     -- Check button clicks
     if self:isPointInButton(x, y, "play") then
+        -- Log what we're about to do
+        ErrorLog.logError("Play button clicked - selected deck: " .. 
+                       self.decks[self.selectedDeckIndex].name .. 
+                       ", board: " .. self.boards[self.selectedBoardIndex].name ..
+                       ", AI: " .. tostring(self.aiOpponent), true)
+                       
+        -- Check if the board has an imagePath and if it exists
+        local boardConfig = self.boards[self.selectedBoardIndex]
+        if boardConfig.imagePath and not love.filesystem.getInfo(boardConfig.imagePath) then
+            ErrorLog.logError("WARNING: Board image not found: " .. boardConfig.imagePath)
+            -- Remove the imagePath to avoid crashes
+            boardConfig.imagePath = nil
+        end
+        
+        -- Change to gameplay scene
         self.changeSceneCallback("gameplay", self.decks[self.selectedDeckIndex], self.boards[self.selectedBoardIndex], self.aiOpponent)
     elseif self:isPointInButton(x, y, "back") then
+        ErrorLog.logError("Back button clicked - returning to main menu", true)
         self.changeSceneCallback("mainmenu")
     end
 end
@@ -424,6 +458,7 @@ function DeckSelection:keypressed(key)
         self.aiOpponent = not self.aiOpponent
     elseif key == "return" then
         if self.selectedDeckIndex > 0 then
+            ErrorLog.logError("Enter key pressed - starting game with selected deck", true)
             self.changeSceneCallback("gameplay", self.decks[self.selectedDeckIndex], self.boards[self.selectedBoardIndex], self.aiOpponent)
         end
     end

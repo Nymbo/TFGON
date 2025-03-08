@@ -2,6 +2,8 @@
 -- Main gameplay scene with full EventBus integration
 -- Now using board and player methods for state changes
 -- Improved event handling for effects, battlecries, and targeting
+-- Added animation system integration
+-- Added robust error handling
 
 local GameManager = require("game.managers.gamemanager")
 local DrawSystem = require("game.scenes.gameplay.draw")
@@ -13,6 +15,20 @@ local Theme = require("game.ui.theme")
 local CardRenderer = require("game.ui.cardrenderer")
 local EffectManager = require("game.managers.effectmanager")
 local EventBus = require("game.eventbus")
+local ErrorLog = require("game.utils.errorlog")
+
+-- Try to load AnimationManager safely
+local AnimationManager = nil
+local success, result = pcall(function()
+    return require("game.managers.animationmanager")
+end)
+
+if success then
+    AnimationManager = result
+    ErrorLog.logError("AnimationManager loaded in gameplay scene", true)
+else
+    ErrorLog.logError("Failed to load AnimationManager in gameplay scene: " .. tostring(result))
+end
 
 -- Local helper function to draw a themed button
 local function drawThemedButton(text, x, y, width, height, isHovered, isSelected)
@@ -74,34 +90,92 @@ Gameplay.__index = Gameplay
 function Gameplay:new(changeSceneCallback, selectedDeck, selectedBoard, aiOpponent)
     local self = setmetatable({}, Gameplay)
     
+    ErrorLog.logError("Initializing gameplay scene", true)
+    
     self.selectedDeck = selectedDeck
     self.selectedBoard = selectedBoard
     self.aiOpponent = aiOpponent or false
 
-    self.gameManager = GameManager:new(selectedDeck, selectedBoard, self.aiOpponent)
+    -- Validate crucial parameters
+    if not selectedDeck or not selectedDeck.cards then
+        ErrorLog.logError("ERROR: Invalid deck parameter in gameplay initialization")
+        error("Invalid deck parameter")
+    end
+    
+    if not selectedBoard then
+        ErrorLog.logError("ERROR: Invalid board parameter in gameplay initialization")
+        error("Invalid board parameter")
+    end
+    
+    ErrorLog.logError("Creating GameManager with deck: " .. 
+                   selectedDeck.name .. ", board: " .. 
+                   selectedBoard.name .. ", AI: " .. tostring(self.aiOpponent), true)
+    
+    -- Initialize game manager with error handling
+    local success, result = pcall(function()
+        return GameManager:new(selectedDeck, selectedBoard, self.aiOpponent)
+    end)
+    
+    if not success then
+        ErrorLog.logError("ERROR creating GameManager: " .. tostring(result))
+        error("Failed to create game manager: " .. tostring(result))
+    end
+    
+    self.gameManager = result
     self.changeSceneCallback = changeSceneCallback
-    self.selectedBoard = selectedBoard
-
+    
     -- Initialize event subscriptions storage
     self.eventSubscriptions = {}
 
     if self.aiOpponent then
-        self.aiManager = AIManager:new(self.gameManager)
-        if love.filesystem.getInfo("difficulty.txt") then
-            local content = love.filesystem.read("difficulty.txt")
-            local difficultyIndex = tonumber(content)
-            if difficultyIndex then
-                local difficultyMap = { [1] = "easy", [2] = "normal", [3] = "hard" }
-                local difficulty = difficultyMap[difficultyIndex] or "normal"
-                self.aiManager:setDifficulty(difficulty)
+        ErrorLog.logError("Initializing AI Manager", true)
+        
+        success, result = pcall(function()
+            local aiManager = AIManager:new(self.gameManager)
+            
+            -- Set AI difficulty if available
+            if love.filesystem.getInfo("difficulty.txt") then
+                local content = love.filesystem.read("difficulty.txt")
+                local difficultyIndex = tonumber(content)
+                if difficultyIndex then
+                    local difficultyMap = { [1] = "easy", [2] = "normal", [3] = "hard" }
+                    local difficulty = difficultyMap[difficultyIndex] or "normal"
+                    aiManager:setDifficulty(difficulty)
+                end
             end
+            
+            return aiManager
+        end)
+        
+        if not success then
+            ErrorLog.logError("WARNING: Failed to initialize AI Manager: " .. tostring(result))
+            -- Continue without AI - this isn't fatal
+            self.aiOpponent = false
+        else
+            self.aiManager = result
         end
     end
 
+    -- Safely load background image
+    ErrorLog.logError("Loading game background", true)
+    
     if selectedBoard and selectedBoard.imagePath and love.filesystem.getInfo(selectedBoard.imagePath) then
+        ErrorLog.logError("Using board-specific background: " .. selectedBoard.imagePath, true)
         self.background = love.graphics.newImage(selectedBoard.imagePath)
     else
-        self.background = love.graphics.newImage("assets/images/background.png")
+        -- Use default background
+        local defaultBgPath = "assets/images/background.png"
+        if love.filesystem.getInfo(defaultBgPath) then
+            ErrorLog.logError("Using default background", true)
+            self.background = love.graphics.newImage(defaultBgPath)
+        else
+            ErrorLog.logError("WARNING: Default background not found, creating placeholder")
+            -- Create a placeholder background if image is missing
+            self.background = love.graphics.newCanvas(800, 600)
+            love.graphics.setCanvas(self.background)
+            love.graphics.clear(0.1, 0.1, 0.1, 1)
+            love.graphics.setCanvas()
+        end
     end
 
     self.endTurnHovered = false
@@ -116,6 +190,7 @@ function Gameplay:new(changeSceneCallback, selectedDeck, selectedBoard, aiOppone
     self.showGameOverPopup = false
     self.gameOverWinner = nil
     self.gameManager.onGameOver = function(winner)
+        ErrorLog.logError("Game over triggered. Winner: " .. (winner and winner.name or "none"), true)
         self.showGameOverPopup = true
         self.gameOverWinner = winner
     end
@@ -130,12 +205,30 @@ function Gameplay:new(changeSceneCallback, selectedDeck, selectedBoard, aiOppone
     self.pendingEffectCardIndex = nil
     self.validTargets = {}
     
-    -- Setup event subscriptions
-    self:initEventSubscriptions()
+    -- Animation state
+    self.waitingForAnimation = false
+    
+    -- Setup event subscriptions with error handling
+    ErrorLog.logError("Setting up gameplay event subscriptions", true)
+    local success, err = pcall(function()
+        self:initEventSubscriptions()
+    end)
+    
+    if not success then
+        ErrorLog.logError("ERROR in initEventSubscriptions: " .. tostring(err))
+    end
     
     -- Start the first turn to initialize the game
-    self.gameManager:startTurn()
-
+    ErrorLog.logError("Starting first game turn", true)
+    success, err = pcall(function()
+        self.gameManager:startTurn()
+    end)
+    
+    if not success then
+        ErrorLog.logError("ERROR starting first turn: " .. tostring(err))
+    end
+    
+    ErrorLog.logError("Gameplay scene initialization complete", true)
     return self
 end
 
@@ -282,6 +375,29 @@ function Gameplay:initEventSubscriptions()
         end,
         "GameplayScene-ManaHandler"
     ))
+    
+    -- Subscribe to animation events (if AnimationManager is available)
+    if AnimationManager then
+        table.insert(self.eventSubscriptions, EventBus.subscribe(
+            EventBus.Events.ANIMATION_STARTED,
+            function(animType, gridX, gridY)
+                -- Set waiting flag when animation starts
+                self.waitingForAnimation = true
+                ErrorLog.logError("Animation started: " .. animType, true)
+            end,
+            "GameplayScene-AnimationStart"
+        ))
+        
+        table.insert(self.eventSubscriptions, EventBus.subscribe(
+            EventBus.Events.ANIMATION_COMPLETED,
+            function(animType, gridX, gridY)
+                -- Clear waiting flag when animation completes
+                self.waitingForAnimation = false
+                ErrorLog.logError("Animation completed: " .. animType, true)
+            end,
+            "GameplayScene-AnimationComplete"
+        ))
+    end
 end
 
 --------------------------------------------------
@@ -297,37 +413,56 @@ end
 
 --------------------------------------------------
 -- queueAnimation: Queue an animation for later processing
--- This is a stub for future animation enhancements
 --------------------------------------------------
 function Gameplay:queueAnimation(animType, data)
-    -- This is now just a stub function that will be replaced with a new animation system
-    -- For now, we'll leave it as an empty function to avoid errors
+    -- This function now safely delegates to the AnimationManager
+    -- Additional animation types will be added as needed
+    if not AnimationManager then
+        return
+    end
+    
+    if animType == "cardPlayed" and data.card.cardType == "Spell" and data.card.name == "Fireball" then
+        -- Fireball animations are handled by event subscriptions in AnimationManager
+    elseif animType == "damage" or animType == "heal" or animType == "death" or 
+           animType == "movement" or animType == "towerDamage" then
+        -- These will be implemented in future updates
+    end
 end
 
 function Gameplay:update(dt)
-    self.gameManager:update(dt)
-    self.endTurnHovered = InputSystem.checkEndTurnHover(self)
-
-    -- Handle AI turns with traditional timer (will migrate to events fully later)
-    if self.aiOpponent and self.gameManager.currentPlayer == 2 and not self.showGameOverPopup then
-        if self.aiTurnTimer and self.aiTurnTimer > 0 then
-            self.aiTurnTimer = self.aiTurnTimer - dt
-            if self.aiTurnTimer <= 0 then
-                -- Trigger the AI turn via an event
-                EventBus.publish(EventBus.Events.AI_TURN_STARTED, self.gameManager.player2)
+    pcall(function()
+        self.gameManager:update(dt)
+        self.endTurnHovered = InputSystem.checkEndTurnHover(self)
+        
+        -- Update animations if available
+        if AnimationManager then
+            AnimationManager:update(dt)
+        end
+    
+        -- Handle AI turns with traditional timer (will migrate to events fully later)
+        if self.aiOpponent and self.gameManager.currentPlayer == 2 and not self.showGameOverPopup then
+            -- Only proceed with AI turn if no animations are playing
+            if not self.waitingForAnimation and not (AnimationManager and AnimationManager:hasActiveAnimations()) then
+                if self.aiTurnTimer and self.aiTurnTimer > 0 then
+                    self.aiTurnTimer = self.aiTurnTimer - dt
+                    if self.aiTurnTimer <= 0 then
+                        -- Trigger the AI turn via an event
+                        EventBus.publish(EventBus.Events.AI_TURN_STARTED, self.gameManager.player2)
+                    end
+                end
             end
         end
-    end
-
-    -- If a card is being dragged, update its position.
-    if self.draggedCard then
-        updateDraggedCard(self.draggedCard, dt)
-    end
     
-    -- If we have a pending effect, update valid targets
-    if self.pendingEffect then
-        self:updateValidTargets()
-    end
+        -- If a card is being dragged, update its position.
+        if self.draggedCard then
+            updateDraggedCard(self.draggedCard, dt)
+        end
+        
+        -- If we have a pending effect, update valid targets
+        if self.pendingEffect then
+            self:updateValidTargets()
+        end
+    end)
     
     -- Process EventBus events
     EventBus.update(dt)
@@ -415,40 +550,52 @@ function Gameplay:updateValidTargets()
 end
 
 function Gameplay:draw()
-    DrawSystem.drawGameplayScene(self)
-
-    -- Draw dragged card with 50% opacity.
-    if self.draggedCard then
-        love.graphics.setColor(1, 1, 1, 0.5)
-        CardRenderer.drawCard(self.draggedCard, self.draggedCard.transform.x, self.draggedCard.transform.y, true)
-        love.graphics.setColor(1, 1, 1, 1)
-    end
-
-    -- Draw targeting indicator if we have a pending effect
-    if self.pendingEffect then
-        self:drawTargetingIndicators()
-    end
-
-    -- Note: We no longer call drawTurnBanner() here since the turn indicator is 
-    -- already displayed by DrawSystem below the End Turn button
-
-    if self.showGameOverPopup then
-        self:drawGameOverPopup()
-    end
+    -- Use pcall to safely call draw methods
+    pcall(function()
+        DrawSystem.drawGameplayScene(self)
     
-    -- If we have a pending effect, show a text prompt
-    if self.pendingEffect then
-        local promptMessage
-        if self.pendingEffectCard and self.pendingEffectCard.cardType == "Weapon" then
-            promptMessage = "Select a minion to equip " .. (self.pendingEffectCard.name or "the weapon")
-        else
-            promptMessage = "Select a target for " .. (self.pendingEffectCard and self.pendingEffectCard.name or "the spell")
+        -- Draw dragged card with 50% opacity.
+        if self.draggedCard then
+            love.graphics.setColor(1, 1, 1, 0.5)
+            CardRenderer.drawCard(self.draggedCard, self.draggedCard.transform.x, self.draggedCard.transform.y, true)
+            love.graphics.setColor(1, 1, 1, 1)
+        end
+    
+        -- Draw targeting indicator if we have a pending effect
+        if self.pendingEffect then
+            self:drawTargetingIndicators()
+        end
+    
+        -- Note: We no longer call drawTurnBanner() here since the turn indicator is 
+        -- already displayed by DrawSystem below the End Turn button
+    
+        if self.showGameOverPopup then
+            self:drawGameOverPopup()
         end
         
-        love.graphics.setFont(Theme.fonts.subtitle)
-        love.graphics.setColor(Theme.colors.textPrimary)
-        love.graphics.printf(promptMessage, 0, 20, love.graphics.getWidth(), "center")
-    end
+        -- If we have a pending effect, show a text prompt
+        if self.pendingEffect then
+            local promptMessage
+            if self.pendingEffectCard and self.pendingEffectCard.cardType == "Weapon" then
+                promptMessage = "Select a minion to equip " .. (self.pendingEffectCard.name or "the weapon")
+            else
+                promptMessage = "Select a target for " .. (self.pendingEffectCard and self.pendingEffectCard.name or "the spell")
+            end
+            
+            love.graphics.setFont(Theme.fonts.subtitle)
+            love.graphics.setColor(Theme.colors.textPrimary)
+            love.graphics.printf(promptMessage, 0, 20, love.graphics.getWidth(), "center")
+        end
+        
+        -- If waiting for animation, show a visual indicator
+        if self.waitingForAnimation or (AnimationManager and AnimationManager:hasActiveAnimations()) then
+            -- Add a visual "Animating..." indication
+            love.graphics.setColor(1, 1, 0, 0.7)
+            love.graphics.setFont(Theme.fonts.body)
+            love.graphics.print("Animating...", 20, 20)
+            love.graphics.setColor(1, 1, 1, 1)
+        end
+    end)
 end
 
 -- Draw targeting indicators
@@ -563,6 +710,11 @@ function Gameplay:mousepressed(x, y, button, istouch, presses)
         return
     end
     
+    -- If animations are playing, don't allow interaction
+    if self.waitingForAnimation or (AnimationManager and AnimationManager:hasActiveAnimations()) then
+        return
+    end
+    
     -- Check if we need to handle a pending effect target selection
     if self.pendingEffect then
         local target = self:selectTarget(x, y)
@@ -665,8 +817,10 @@ function Gameplay:handleGameOverPopupClick(x, y)
         if x >= area.x and x <= area.x + area.width and
            y >= area.y and y <= area.y + area.height then
             if btnText == "Restart" then
+                ErrorLog.logError("Restart game requested", true)
                 self.changeSceneCallback("gameplay", self.selectedDeck, self.selectedBoard, self.aiOpponent)
             elseif btnText == "Main Menu" then
+                ErrorLog.logError("Return to main menu requested", true)
                 self.changeSceneCallback("mainmenu")
             end
         end
@@ -674,6 +828,11 @@ function Gameplay:handleGameOverPopupClick(x, y)
 end
 
 function Gameplay:endTurn()
+    -- Don't allow ending turn if animations are playing
+    if self.waitingForAnimation or (AnimationManager and AnimationManager:hasActiveAnimations()) then
+        return
+    end
+    
     -- Publish turn ending event
     EventBus.publish(EventBus.Events.TURN_ENDED, self.gameManager:getCurrentPlayer())
     
@@ -706,6 +865,11 @@ function Gameplay:keypressed(key)
 end
 
 function Gameplay:resolveAttack(attacker, target)
+    -- Don't allow attacks if animations are playing
+    if self.waitingForAnimation or (AnimationManager and AnimationManager:hasActiveAnimations()) then
+        return
+    end
+    
     CombatSystem.resolveAttack(self, attacker, target)
 end
 
@@ -713,6 +877,8 @@ end
 -- Cleanup function to properly dispose resources
 --------------------------------------------------
 function Gameplay:destroy()
+    ErrorLog.logError("Destroying gameplay scene", true)
+    
     -- Clean up our event subscriptions
     self:clearEventSubscriptions()
     

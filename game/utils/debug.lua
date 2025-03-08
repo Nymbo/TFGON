@@ -14,7 +14,7 @@ Debug.ENABLED = true
 Debug.usecolor = true
 
 -- If set to a string (e.g. "debug.log"), logs will be appended to that file
-Debug.outfile = nil
+Debug.outfile = "debug.log" -- Changed to always log to file for crash debugging
 
 --------------------------------------------------
 -- Log Levels
@@ -136,7 +136,7 @@ function Debug.log(message, level)
         })
     end
 
-    -- Optionally write to file
+    -- Always write to file for crash debugging
     if Debug.outfile then
         local fp = io.open(Debug.outfile, "a")
         if fp then
@@ -206,6 +206,19 @@ function Debug.printCallTrace()
         print(string.format("%d. [%s] %s", i, call.time, call.name))
     end
     print("==================\n")
+end
+
+-- Save call trace to file
+function Debug.saveCallTrace()
+    local fp = io.open("trace_log.txt", "w")
+    if fp then
+        fp:write("=== CALL TRACE ===\n")
+        for i, call in ipairs(Debug.callTrace) do
+            fp:write(string.format("%d. [%s] %s\n", i, call.time, call.name))
+        end
+        fp:write("==================\n")
+        fp:close()
+    end
 end
 
 --------------------------------------------------
@@ -318,6 +331,27 @@ function Debug.printErrorLog()
     print("=================\n")
 end
 
+-- Save error log to file
+function Debug.saveErrorLog()
+    local fp = io.open("error_log.txt", "w")
+    if fp then
+        fp:write("=== ERROR LOG ===\n")
+        for i, err in ipairs(Debug.errorLog) do
+            local levelNames = {
+                [Debug.LEVELS.ERROR]    = "ERROR",
+                [Debug.LEVELS.CRITICAL] = "CRITICAL"
+            }
+            fp:write(string.format("%d. [%s] %s: %s\n",
+                i,
+                err.timestamp,
+                levelNames[err.level] or "UNKNOWN",
+                tostring(err.message)))
+        end
+        fp:write("=================\n")
+        fp:close()
+    end
+end
+
 --------------------------------------------------
 -- Memory Check
 -- Now prints memory usage only once every 5 minutes
@@ -348,6 +382,45 @@ function Debug.installErrorHandler()
         Debug.critical("LOVE Error: " .. tostring(msg))
         Debug.printCallTrace()
         Debug.printErrorLog()
+        
+        -- Save logs to file to help diagnose crashes
+        Debug.saveCallTrace()
+        Debug.saveErrorLog()
+        
+        -- Write a complete error report
+        local fp = io.open("crash_report.txt", "w")
+        if fp then
+            fp:write("=== CRASH REPORT ===\n")
+            fp:write("Time: " .. os.date() .. "\n")
+            fp:write("Error: " .. tostring(msg) .. "\n\n")
+            
+            -- Include traceback
+            fp:write("=== TRACEBACK ===\n")
+            fp:write(debug.traceback() .. "\n\n")
+            
+            -- Include call trace
+            fp:write("=== CALL TRACE ===\n")
+            for i, call in ipairs(Debug.callTrace) do
+                fp:write(string.format("%d. [%s] %s\n", i, call.time, call.name))
+            end
+            
+            -- Include error log
+            fp:write("\n=== ERROR LOG ===\n")
+            for i, err in ipairs(Debug.errorLog) do
+                local levelNames = {
+                    [Debug.LEVELS.ERROR]    = "ERROR",
+                    [Debug.LEVELS.CRITICAL] = "CRITICAL"
+                }
+                fp:write(string.format("%d. [%s] %s: %s\n",
+                    i,
+                    err.timestamp,
+                    levelNames[err.level] or "UNKNOWN",
+                    tostring(err.message)))
+            end
+            
+            fp:write("\n=== END OF CRASH REPORT ===\n")
+            fp:close()
+        end
         
         return originalErrorHandler(msg)
     end

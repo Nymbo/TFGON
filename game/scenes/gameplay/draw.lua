@@ -1,10 +1,25 @@
 -- game/scenes/gameplay/draw.lua
 -- Handles drawing the Gameplay scene elements
 -- Updated with support for targeting indicators
+-- Now includes animation rendering with safe handling
 
 local BoardRenderer = require("game.ui.boardrenderer")
 local CardRenderer = require("game.ui.cardrenderer")
 local Theme = require("game.ui.theme")  -- Import the theme
+local ErrorLog = require("game.utils.errorlog")
+
+-- Try to load AnimationManager safely
+local AnimationManager = nil
+local success, result = pcall(function()
+    return require("game.managers.animationmanager")
+end)
+
+if success then
+    AnimationManager = result
+    ErrorLog.logError("AnimationManager loaded in DrawSystem", true)
+else
+    ErrorLog.logError("Failed to load AnimationManager in DrawSystem: " .. tostring(result))
+end
 
 --------------------------------------------------
 -- Constants for the 'End Turn' button using Theme
@@ -60,6 +75,13 @@ function DrawSystem.drawGameplayScene(gameplay)
         local cardX = startX + (i - 1) * (cardWidth + 10)
         local isPlayable = (card.cost <= currentPlayer.manaCrystals)
         CardRenderer.drawCard(card, cardX, cardY, isPlayable)
+    end
+
+    -- Draw all active animations (if available)
+    if AnimationManager then
+        pcall(function()
+            AnimationManager:draw()
+        end)
     end
 
     -- Draw 'End Turn' button using theme
@@ -138,9 +160,27 @@ function DrawSystem.drawGameplayScene(gameplay)
 
     -- Ensure the mana frame image is loaded only once
     if not DrawSystem.manaFrame then
-        DrawSystem.manaFrame = love.graphics.newImage("assets/images/FrameRound.png")
-        DrawSystem.manaFrameScale = 0.16  -- Scale so that the 512x512 image becomes roughly 80x80
+        -- Use pcall to handle missing images
+        local success, result = pcall(function()
+            return love.graphics.newImage("assets/images/FrameRound.png")
+        end)
+        
+        if success then
+            DrawSystem.manaFrame = result
+            DrawSystem.manaFrameScale = 0.16  -- Scale so that the 512x512 image becomes roughly 80x80
+        else
+            ErrorLog.logError("Failed to load mana frame image: " .. tostring(result))
+            -- Create a placeholder canvas for the mana frame
+            DrawSystem.manaFrame = love.graphics.newCanvas(80, 80)
+            love.graphics.setCanvas(DrawSystem.manaFrame)
+            love.graphics.clear(0.2, 0.4, 0.8, 1)
+            love.graphics.setColor(0.1, 0.3, 0.7, 1)
+            love.graphics.circle("fill", 40, 40, 35)
+            love.graphics.setCanvas()
+            DrawSystem.manaFrameScale = 1
+        end
     end
+    
     local manaFrame = DrawSystem.manaFrame
     local manaScale = DrawSystem.manaFrameScale
     local frameWidth = manaFrame:getWidth() * manaScale
@@ -152,7 +192,20 @@ function DrawSystem.drawGameplayScene(gameplay)
     local p2Y = 20       -- near the top
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.draw(manaFrame, p2X, p2Y, 0, manaScale, manaScale)
-    local manaFont = love.graphics.newFont("assets/fonts/InknutAntiqua-Regular.ttf", 24)
+    
+    -- Load mana font safely
+    local manaFont
+    local success, result = pcall(function()
+        return love.graphics.newFont("assets/fonts/InknutAntiqua-Regular.ttf", 24)
+    end)
+    
+    if success then
+        manaFont = result
+    else
+        ErrorLog.logError("Failed to load mana font: " .. tostring(result))
+        manaFont = love.graphics.getFont() -- Fallback to current font
+    end
+    
     love.graphics.setFont(manaFont)
     love.graphics.setColor(Theme.colors.textPrimary)
     love.graphics.printf(p2ManaText, p2X, p2Y + (frameHeight - manaFont:getHeight())/2, frameWidth, "center")
