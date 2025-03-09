@@ -1,6 +1,7 @@
 -- game/scenes/gameplay/EventHandlers.lua
 -- Centralizes all event subscriptions for the gameplay scene
 -- Makes event handling more organized and maintainable
+-- Added debugging for Glancing Blows effect
 
 local EventBus = require("game.eventbus")
 local ErrorLog = require("game.utils.errorlog")
@@ -172,6 +173,44 @@ function EventHandlers:initEventSubscriptions()
             end
         end,
         "EventHandlers-CardDragHandler"
+    ))
+    
+    -- Add special debugging for Glancing Blows effect
+    table.insert(self.eventSubscriptions, EventBus.subscribe(
+        EventBus.Events.EFFECT_TRIGGERED,
+        function(effectType, attacker, target)
+            if effectType == "GlancingBlows" and attacker then
+                -- Log when Glancing Blows triggers
+                ErrorLog.logError("GLANCING BLOWS: " .. attacker.name .. " avoided counter-damage!", true)
+                
+                -- Log debug info about the minion
+                local debugInfo = "Minion Properties: "
+                if attacker.glancingBlows then
+                    debugInfo = debugInfo .. "glancingBlows=true, "
+                else
+                    debugInfo = debugInfo .. "glancingBlows=false, "
+                end
+                
+                debugInfo = debugInfo .. "name=" .. attacker.name .. 
+                            ", attack=" .. attacker.attack .. 
+                            ", health=" .. attacker.currentHealth .. "/" .. attacker.maxHealth
+                            
+                ErrorLog.logError(debugInfo, true)
+            end
+        end,
+        "EventHandlers-GlancingBlowsDebug"
+    ))
+    
+    -- Debug logging for minion summoning
+    table.insert(self.eventSubscriptions, EventBus.subscribe(
+        EventBus.Events.MINION_SUMMONED,
+        function(player, minion, x, y)
+            if minion.glancingBlows then
+                ErrorLog.logError("SUMMONED MINION WITH GLANCING BLOWS: " .. 
+                                minion.name .. " at position " .. x .. "," .. y, true)
+            end
+        end,
+        "EventHandlers-MinionSummonDebug"
     ))
 end
 

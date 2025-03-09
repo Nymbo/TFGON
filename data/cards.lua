@@ -2,6 +2,7 @@
 -- Card data now includes "movement" and "archetype" for minions.
 -- Weapons now have archetypeRequirement to indicate which minions can equip them.
 -- Now integrating with EventBus for better effect handling
+-- Added Street Fighter with Glancing Blows effect
 local EventBus = require("game.eventbus")  -- Import EventBus
 
 return {
@@ -106,6 +107,20 @@ return {
         health = 3,
         movement = 2,
         archetype = "Ranged"
+    },
+    
+    --------------------------------------------------
+    -- Minion with Glancing Blows
+    --------------------------------------------------
+    {
+        name = "Street Fighter",
+        cardType = "Minion",
+        cost = 4,
+        attack = 2,
+        health = 3,
+        movement = 2,
+        archetype = "Melee",
+        glancingBlows = true  -- This minion has the Glancing Blows effect
     },
 
     --------------------------------------------------

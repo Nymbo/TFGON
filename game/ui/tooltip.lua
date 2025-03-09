@@ -2,6 +2,7 @@
 -- Manages tooltips that appear when hovering over cards on the board
 -- Enhanced to show weapon information in the minion tooltip
 -- Now displays weapon to the side of the minion card rather than below
+-- Added support for Glancing Blows effect text in tooltip
 
 local CardRenderer = require("game.ui.cardrenderer")
 local Theme = require("game.ui.theme")
@@ -36,6 +37,7 @@ local function getWeaponTooltipDimensions()
 end
 
 -- Convert a minion object to a card-compatible format
+-- Now with glancingBlows property
 local function minionToCard(minion)
     return {
         name = minion.name,
@@ -47,7 +49,8 @@ local function minionToCard(minion)
         movement = minion.movement,
         archetype = minion.archetype,
         battlecry = minion.battlecry,
-        deathrattle = minion.deathrattle
+        deathrattle = minion.deathrattle,
+        glancingBlows = minion.glancingBlows -- Include Glancing Blows property
     }
 end
 
@@ -195,6 +198,51 @@ function Tooltip.draw()
         
         local weaponData = weaponToCard(currentHoverTarget.weapon)
         CardRenderer.drawCard(weaponData, 0, 0, false)
+    end
+    
+    -- Draw Glancing Blows explanation if the minion has it
+    if currentHoverTarget.glancingBlows then
+        -- Reset transform to draw the explanation text
+        love.graphics.origin()
+        
+        -- Draw explanation at the bottom of the tooltip
+        local explanationX = tooltipX
+        local explanationY = tooltipY + totalHeight + 5
+        local explanationWidth = totalWidth
+        
+        -- Draw explanation background
+        love.graphics.setColor(0.2, 0.6, 0.8, 0.2) -- Cyan-blue background
+        love.graphics.rectangle(
+            "fill",
+            explanationX,
+            explanationY,
+            explanationWidth,
+            40,
+            5
+        )
+        
+        -- Draw explanation border
+        love.graphics.setColor(0.2, 0.6, 0.8, 0.5)
+        love.graphics.setLineWidth(1)
+        love.graphics.rectangle(
+            "line",
+            explanationX,
+            explanationY,
+            explanationWidth,
+            40,
+            5
+        )
+        
+        -- Draw explanation text
+        love.graphics.setFont(Theme.fonts.body)
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.printf(
+            "Glancing Blows: This minion does not take counter-damage when attacking enemy minions.",
+            explanationX + 10,
+            explanationY + 10,
+            explanationWidth - 20,
+            "left"
+        )
     end
     
     -- Restore graphics state

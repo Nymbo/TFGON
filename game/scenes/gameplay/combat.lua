@@ -1,6 +1,7 @@
 -- game/scenes/gameplay/combat.lua
 -- Refactored to use board methods for state changes
 -- Now fully integrated with EventBus for decoupled architecture
+-- Fixed implementation of Glancing Blows effect
 
 local CombatSystem = {}
 local EffectManager = require("game.managers.effectmanager")
@@ -56,20 +57,25 @@ function CombatSystem.resolveAttack(gameplayOrManager, attackerInfo, targetInfo)
             
             print(attacker.name .. " attacked " .. target.name .. " for " .. attacker.attack .. " damage!")
 
-            -- Handle counterattacks based on archetype
-            if attacker.archetype == "Melee" then
-                board:applyDamageToMinion(attacker, target.attack, target)
-                
-                print(target.name .. " counterattacked " .. attacker.name .. " for " .. target.attack .. " damage!")
+            -- Check if attacker has Glancing Blows before applying counter damage
+            if attacker.glancingBlows then
+                -- Attacker has Glancing Blows, so no counter damage is taken
+                print(attacker.name .. " avoided counter-damage with Glancing Blows!")
+                EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "GlancingBlows", attacker, target)
             else
-                -- Ranged/Magic only take counter if within target's reach
-                if distance <= targetReach then
+                -- Handle normal counterattacks based on archetype
+                if attacker.archetype == "Melee" then
                     board:applyDamageToMinion(attacker, target.attack, target)
-                    
                     print(target.name .. " counterattacked " .. attacker.name .. " for " .. target.attack .. " damage!")
                 else
-                    print(attacker.name .. " safely attacked from distance!")
-                    EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "SafeAttack")
+                    -- Ranged/Magic only take counter if within target's reach
+                    if distance <= targetReach then
+                        board:applyDamageToMinion(attacker, target.attack, target)
+                        print(target.name .. " counterattacked " .. attacker.name .. " for " .. target.attack .. " damage!")
+                    else
+                        print(attacker.name .. " safely attacked from distance!")
+                        EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "SafeAttack")
+                    end
                 end
             end
 

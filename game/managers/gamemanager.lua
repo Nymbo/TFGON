@@ -6,6 +6,7 @@
 --   * Summoning minions logic remains the same.
 --   * Now with support for targeting effects
 --   * Integrated with EventBus for better decoupling
+--   * Added proper handling of Glancing Blows property
 
 local Player = require("game.core.player")
 local Board = require("game.core.board")
@@ -376,6 +377,7 @@ end
 -- summonMinion(player, card, cardIndex, x, y):
 -- Places a minion on the board if valid.
 -- Now publishes events for minion summoning and card playing.
+-- Now properly copies the glancingBlows property
 --------------------------------------------------
 function GameManager:summonMinion(player, card, cardIndex, x, y)
     local validSpawnRow = (player == self.player1) and self.board.rows or 1
@@ -405,7 +407,8 @@ function GameManager:summonMinion(player, card, cardIndex, x, y)
         hasMoved = false,
         summoningSickness = true,
         battlecry = card.battlecry,
-        deathrattle = card.deathrattle
+        deathrattle = card.deathrattle,
+        glancingBlows = card.glancingBlows  -- Properly copy the glancingBlows property
     }
     
     -- Place on board

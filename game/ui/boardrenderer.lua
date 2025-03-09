@@ -2,6 +2,7 @@
 -- Renders the grid-based board with variable dimensions and tooltips
 -- Updated to draw multiple towers per player.
 -- Now with improved weapon visuals and unified tooltip system.
+-- Added visual indicator for Glancing Blows effect
 
 local BoardRenderer = {}
 local Theme = require("game.ui.theme")
@@ -152,6 +153,39 @@ local function drawWeaponIcon(x, y, minion)
 end
 
 --------------------------------------------------
+-- drawGlancingBlowsIndicator: Helper to show a minion has Glancing Blows
+--------------------------------------------------
+local function drawGlancingBlowsIndicator(x, y, minion)
+    if not minion.glancingBlows then return end
+    
+    -- Draw Glancing Blows indicator in the top-middle of the minion card
+    local indicatorX = x + TILE_SIZE/2
+    local indicatorY = y + 9  -- Slightly higher than weapon icon
+    local indicatorRadius = 8  -- Smaller than stat circles
+    
+    -- Draw indicator circle
+    love.graphics.setColor(0.2, 0.6, 0.8, 1) -- Cyan-blue for Glancing Blows
+    love.graphics.circle("fill", indicatorX, indicatorY, indicatorRadius)
+    
+    love.graphics.setColor(0.1, 0.4, 0.6, 1) -- Darker border
+    love.graphics.setLineWidth(1)
+    love.graphics.circle("line", indicatorX, indicatorY, indicatorRadius)
+    
+    -- Draw "G" for Glancing Blows
+    love.graphics.setFont(boardFonts.cardType)
+    love.graphics.setColor(1, 1, 1, 1)
+    local text = "G"
+    local textWidth = boardFonts.cardType:getWidth(text)
+    local textHeight = boardFonts.cardType:getHeight()
+    love.graphics.print(text, indicatorX - textWidth/2, indicatorY - textHeight/2)
+    
+    -- Pulsing glow animation
+    local pulse = (math.sin(love.timer.getTime() * 3) + 1) / 2 * 0.5 + 0.5 -- Value between 0.5 and 1
+    love.graphics.setColor(0.2, 0.6, 0.8, 0.3 * pulse)
+    love.graphics.circle("fill", indicatorX, indicatorY, indicatorRadius + 3)
+end
+
+--------------------------------------------------
 -- drawMinion: Renders a minion in its grid cell
 --------------------------------------------------
 local function drawMinion(minion, cellX, cellY, currentPlayer, selectedMinion)
@@ -218,6 +252,11 @@ local function drawMinion(minion, cellX, cellY, currentPlayer, selectedMinion)
     -- Draw weapon icon if the minion has one
     if minion.weapon then
         drawWeaponIcon(x, y, minion)
+    end
+    
+    -- Draw Glancing Blows indicator if the minion has it
+    if minion.glancingBlows then
+        drawGlancingBlowsIndicator(x, y, minion)
     end
 
     -- Outline logic
