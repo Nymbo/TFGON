@@ -1,7 +1,7 @@
 -- main.lua
 -- This is the entry point for the LOVE 2D application.
 -- Updated to include EventBus, EventMonitor, and AnimationManager
--- Now with dedicated error logging
+-- Now with dedicated error logging and flux animation library
 
 --------------------------------------------------
 -- First, load the error logging system right away
@@ -16,6 +16,7 @@ local SceneManager = require("game.managers.scenemanager")
 local Debug = require("game.utils.debug")
 local EventBus = require("game.eventbus")
 local EventMonitor = require("game.tools.eventmonitor")
+local flux = require("libs.flux")  -- Add flux for animations
 
 -- Try to load Animation Manager but fail gracefully
 local AnimationManager = nil
@@ -92,6 +93,13 @@ function love.load()
                                     animType, gridX or 0, gridY or 0), true)
                 end, "AnimationLogger")
             end
+            
+            -- Add flux animation event logging
+            EventBus.subscribe(EventBus.Events.EFFECT_TRIGGERED, function(effectType, ...)
+                if effectType:match("Card") then  -- Match card-related events
+                    ErrorLog.logError("Card effect: " .. effectType, true)
+                end
+            end, "CardAnimationLogger")
         end
         
         -- Publish game initialization event
@@ -111,7 +119,10 @@ end
 function love.update(dt)
     -- Wrap in pcall to catch any errors
     pcall(function()
-        -- Update the EventBus first
+        -- Update flux animations first
+        flux.update(dt)
+        
+        -- Update the EventBus
         EventBus.update(dt)
         
         -- Update EventMonitor

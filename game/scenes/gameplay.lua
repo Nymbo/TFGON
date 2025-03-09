@@ -1,9 +1,5 @@
--- game/scenes/gameplay.lua
--- Main gameplay scene with full EventBus integration
--- Now using board and player methods for state changes
--- Improved event handling for effects, battlecries, and targeting
--- Added animation system integration
--- Added robust error handling
+-- Updates to game/scenes/gameplay.lua
+-- We need to first require the flux library at the top of the file
 
 local GameManager = require("game.managers.gamemanager")
 local DrawSystem = require("game.scenes.gameplay.draw")
@@ -16,6 +12,7 @@ local CardRenderer = require("game.ui.cardrenderer")
 local EffectManager = require("game.managers.effectmanager")
 local EventBus = require("game.eventbus")
 local ErrorLog = require("game.utils.errorlog")
+local flux = require("libs.flux")  -- Add this line to import flux
 
 -- Try to load AnimationManager safely
 local AnimationManager = nil
@@ -27,7 +24,7 @@ if success then
     AnimationManager = result
     ErrorLog.logError("AnimationManager loaded in gameplay scene", true)
 else
-    ErrorLog.logError("Failed to load AnimationManager in gameplay scene: " .. tostring(result))
+    ErrorLog.logError("Failed to load AnimationManager in DrawSystem: " .. tostring(result))
 end
 
 -- Local helper function to draw a themed button
@@ -73,14 +70,45 @@ local function drawThemedButton(text, x, y, width, height, isHovered, isSelected
     love.graphics.printf(text, x, y + (height - Theme.fonts.button:getHeight())/2, width, "center")
 end
 
--- Local function to update dragged card position
+-- Enhanced function to update dragged card position with physics
 local function updateDraggedCard(card, dt)
     local cardWidth, cardHeight = CardRenderer.getCardDimensions()
     local mx, my = love.mouse.getPosition()
-    card.target_transform.x = mx - cardWidth / 2
-    card.target_transform.y = my - cardHeight / 2
-    card.transform.x = card.target_transform.x
-    card.transform.y = card.target_transform.y
+    
+    -- Calculate target position (where the card should go)
+    local targetX = mx - cardWidth / 2
+    local targetY = my - cardHeight / 2
+    
+    -- Set the target transform
+    card.target_transform.x = targetX
+    card.target_transform.y = targetY
+    
+    -- Calculate distance from current to target
+    local distX = targetX - card.transform.x
+    local distY = targetY - card.transform.y
+    
+    -- Calculate new velocity with smoothing
+    local elasticity = 8.0  -- Higher values make card more responsive/elastic
+    local damping = 0.8    -- Damping factor to prevent oscillation
+    
+    -- Apply forces to velocity
+    card.velocity.x = card.velocity.x * damping + distX * elasticity * dt
+    card.velocity.y = card.velocity.y * damping + distY * elasticity * dt
+    
+    -- Apply velocity to position
+    card.transform.x = card.transform.x + card.velocity.x
+    card.transform.y = card.transform.y + card.velocity.y
+    
+    -- Add a slight rotation based on horizontal velocity
+    -- This creates a natural "turning" effect when moving the card
+    local maxRotation = 0.1  -- Maximum rotation in radians
+    card.rotation = -card.velocity.x * 0.01  -- Scale factor to control rotation amount
+    
+    -- Clamp rotation to prevent excessive spinning
+    card.rotation = math.max(-maxRotation, math.min(maxRotation, card.rotation))
+    
+    -- Publish card movement event so other systems can react
+    EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "CardDragged", card, card.transform.x, card.transform.y)
 end
 
 local Gameplay = {}
@@ -195,7 +223,7 @@ function Gameplay:new(changeSceneCallback, selectedDeck, selectedBoard, aiOppone
         self.gameOverWinner = winner
     end
 
-    -- Properties for drag-and-drop
+    -- Properties for drag-and-drop with improved physics
     self.draggedCard = nil
     self.draggedCardIndex = nil
 
@@ -398,6 +426,98 @@ function Gameplay:initEventSubscriptions()
             "GameplayScene-AnimationComplete"
         ))
     end
+    
+    -- Add subscription for card drag effects
+    table.insert(self.eventSubscriptions, EventBus.subscribe(
+        EventBus.Events.EFFECT_TRIGGERED,
+        function(effectType, card, x, y)
+            if effectType == "CardDragged" and card then
+                -- Apply card dragging effects here if needed
+                -- For example, you might want to trigger sounds or visual effects
+            end
+        end,
+        "GameplayScene-CardDragHandler"
+    ))
+    
+    -- Subscribe to card drawn events to trigger animations
+    table.insert(self.eventSubscriptions, EventBus.subscribe(
+        EventBus.Events.CARD_DRAWN,
+        function(player, card)
+            if player == self.gameManager:getCurrentPlayer() then
+                -- Get the index of the card in the hand
+                local index = 0
+                for i, handCard in ipairs(player.hand) do
+                    if handCard == card then
+                        index = i
+                        break
+                    end
+                end
+                
+                -- Trigger the card drawing animation
+                if index > 0 then
+                    DrawSystem.onCardDrawn(card, index, player.hand)
+                end
+            end
+        end,
+        "GameplayScene-CardDrawnHandler"
+    ))
+
+    -- Subscribe to card played events to trigger animations
+    table.insert(self.eventSubscriptions, EventBus.subscribe(
+        EventBus.Events.CARD_PLAYED,
+        function(player, card)
+            if player == self.gameManager:getCurrentPlayer() then
+                -- Trigger the card playing animation
+                DrawSystem.onCardPlayed(card)
+                
+                -- Tell the DrawSystem that the hand has changed
+                DrawSystem.onHandChanged()
+            end
+        end,
+        "GameplayScene-CardPlayedHandler"
+    ))
+
+    -- Subscribe to hand changed events (like when cards are added or removed)
+    table.insert(self.eventSubscriptions, EventBus.subscribe(
+        EventBus.Events.CARD_ADDED_TO_HAND,
+        function(player, card)
+            if player == self.gameManager:getCurrentPlayer() then
+                DrawSystem.onHandChanged()
+            end
+        end,
+        "GameplayScene-CardAddedHandler"
+    ))
+
+    table.insert(self.eventSubscriptions, EventBus.subscribe(
+        EventBus.Events.CARD_DISCARDED,
+        function(player, card)
+            if player == self.gameManager:getCurrentPlayer() then
+                DrawSystem.onHandChanged()
+            end
+        end,
+        "GameplayScene-CardDiscardedHandler"
+    ))
+
+    -- Subscribe to card being returned to hand
+    table.insert(self.eventSubscriptions, EventBus.subscribe(
+        EventBus.Events.EFFECT_TRIGGERED,
+        function(effectType, card)
+            if effectType == "CardReturnedToHand" and card then
+                DrawSystem.onHandChanged()
+            end
+        end,
+        "GameplayScene-CardReturnedHandler"
+    ))
+
+    -- Subscribe to turn started events to reset the card visuals
+    table.insert(self.eventSubscriptions, EventBus.subscribe(
+        EventBus.Events.TURN_STARTED,
+        function(player)
+            -- Reset card animations when turn changes
+            DrawSystem.onHandChanged()
+        end,
+        "GameplayScene-TurnStartCardHandler"
+    ))
 end
 
 --------------------------------------------------
@@ -430,6 +550,9 @@ function Gameplay:queueAnimation(animType, data)
 end
 
 function Gameplay:update(dt)
+    -- Update flux animations
+    flux.update(dt)
+    
     pcall(function()
         self.gameManager:update(dt)
         self.endTurnHovered = InputSystem.checkEndTurnHover(self)
@@ -554,10 +677,33 @@ function Gameplay:draw()
     pcall(function()
         DrawSystem.drawGameplayScene(self)
     
-        -- Draw dragged card with 50% opacity.
+        -- Draw dragged card with 50% opacity and apply rotation
         if self.draggedCard then
             love.graphics.setColor(1, 1, 1, 0.5)
-            CardRenderer.drawCard(self.draggedCard, self.draggedCard.transform.x, self.draggedCard.transform.y, true)
+            
+            -- Save the current transform state
+            love.graphics.push()
+            
+            -- Move to the card's position
+            love.graphics.translate(
+                self.draggedCard.transform.x + CardRenderer.getCardDimensions()/2,
+                self.draggedCard.transform.y + CardRenderer.getCardDimensions()/2
+            )
+            
+            -- Apply rotation
+            love.graphics.rotate(self.draggedCard.rotation or 0)
+            
+            -- Draw the card centered at the origin
+            CardRenderer.drawCard(
+                self.draggedCard, 
+                -CardRenderer.getCardDimensions()/2,
+                -CardRenderer.getCardDimensions()/2, 
+                true
+            )
+            
+            -- Restore the previous transform state
+            love.graphics.pop()
+            
             love.graphics.setColor(1, 1, 1, 1)
         end
     
