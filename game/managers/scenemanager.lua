@@ -122,8 +122,8 @@ function SceneManager:changeScene(sceneName, ...)
         
         -- Try to load the gameplay scene
         local success, result = pcall(function()
-            local Gameplay = require("game.scenes.gameplay")
-            return Gameplay:new(function(newScene, ...)
+            local GameplayScene = require("game.scenes.gameplay.GameplayScene")
+            return GameplayScene:new(function(newScene, ...)
                 self:changeScene(newScene, ...)
             end, unpack(args))  -- Use unpack to pass the captured args
         end)
