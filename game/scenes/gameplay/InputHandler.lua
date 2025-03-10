@@ -1,7 +1,6 @@
 -- game/scenes/gameplay/InputHandler.lua
--- Handles all input processing for the gameplay scene.
--- Manages card dragging, minion selection, and button interactions.
--- Now updated to convert board click coordinates using the camera's worldCoords.
+-- Handles all input processing for the gameplay scene
+-- Manages card dragging, minion selection, and button interactions
 
 local CardRenderer = require("game.ui.cardrenderer")
 local BoardRenderer = require("game.ui.boardrenderer")
@@ -114,9 +113,12 @@ function InputHandler:updateDraggedCard(dt)
     self.draggedCard.transform.x = self.draggedCard.transform.x + self.draggedCard.velocity.x
     self.draggedCard.transform.y = self.draggedCard.transform.y + self.draggedCard.velocity.y
     
-    -- Add a slight rotation based on horizontal velocity for a natural turning effect
+    -- Add a slight rotation based on horizontal velocity
+    -- This creates a natural "turning" effect when moving the card
     local maxRotation = 0.1  -- Maximum rotation in radians
-    self.draggedCard.rotation = -self.draggedCard.velocity.x * 0.01
+    self.draggedCard.rotation = -self.draggedCard.velocity.x * 0.01  -- Scale factor to control rotation amount
+    
+    -- Clamp rotation to prevent excessive spinning
     self.draggedCard.rotation = math.max(-maxRotation, math.min(maxRotation, self.draggedCard.rotation))
     
     -- Publish card movement event so other systems can react
@@ -132,14 +134,30 @@ function InputHandler:drawDraggedCard()
     local cardWidth, cardHeight = CardRenderer.getCardDimensions()
     
     love.graphics.setColor(1, 1, 1, 0.5)
+    
+    -- Save the current transform state
     love.graphics.push()
+    
+    -- Move to the card's position
     love.graphics.translate(
-        self.draggedCard.transform.x + cardWidth / 2,
-        self.draggedCard.transform.y + cardHeight / 2
+        self.draggedCard.transform.x + cardWidth/2,
+        self.draggedCard.transform.y + cardHeight/2
     )
+    
+    -- Apply rotation
     love.graphics.rotate(self.draggedCard.rotation or 0)
-    CardRenderer.drawCard(self.draggedCard, -cardWidth / 2, -cardHeight / 2, true)
+    
+    -- Draw the card centered at the origin
+    CardRenderer.drawCard(
+        self.draggedCard, 
+        -cardWidth/2,
+        -cardHeight/2, 
+        true
+    )
+    
+    -- Restore the previous transform state
     love.graphics.pop()
+    
     love.graphics.setColor(1, 1, 1, 1)
 end
 
@@ -151,7 +169,7 @@ function InputHandler:handleMousePressed(x, y, button, istouch, presses)
     local gm = gameplay.gameManager
     local currentPlayer = gm:getCurrentPlayer()
 
-    -- End Turn button check (UI, using screen coordinates)
+    -- End Turn button check
     local buttonX = love.graphics.getWidth() - END_TURN_BUTTON.width - 20
     local buttonY = love.graphics.getHeight() / 2 - END_TURN_BUTTON.height / 2
     if isPointInRect(x, y, buttonX, buttonY, END_TURN_BUTTON.width, END_TURN_BUTTON.height) then
@@ -161,7 +179,7 @@ function InputHandler:handleMousePressed(x, y, button, istouch, presses)
         return
     end
 
-    -- Possibly clicking on a card in hand (UI, screen coordinates)
+    -- Possibly clicking on a card in hand
     local hand = currentPlayer.hand
     local cardWidth, cardHeight = CardRenderer.getCardDimensions()
     local totalWidth = #hand * (cardWidth + 10)
@@ -173,24 +191,38 @@ function InputHandler:handleMousePressed(x, y, button, istouch, presses)
         if isPointInRect(x, y, cardX, cardY, cardWidth, cardHeight) then
             if card.cost > currentPlayer.manaCrystals then
                 print("Not enough mana to play " .. card.name)
+                
+                -- Trigger feedback animation
                 flux.to({x = cardX, y = cardY}, 0.1, {x = cardX - 5, y = cardY})
                     :after({x = cardX - 5, y = cardY}, 0.1, {x = cardX + 5, y = cardY})
                     :after({x = cardX + 5, y = cardY}, 0.1, {x = cardX, y = cardY})
+                
+                -- Publish not enough mana event
                 EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "NotEnoughMana", card)
                 return
             end
             
+            -- Handle card play based on type
             if card.cardType == "Weapon" then
+                -- Defer to targeting system
                 gameplay.targetingSystem:beginTargeting(card.effectKey, card, i)
                 return
+                
             elseif card.cardType == "Spell" and card.effectKey and require("game.managers.effectmanager").requiresTarget(card.effectKey) then
+                -- Defer to targeting system
                 gameplay.targetingSystem:beginTargeting(card.effectKey, card, i)
                 return
+                
             elseif card.cardType == "Minion" then
+                -- If it's a minion, set pendingSummon
                 gameplay.pendingSummon = { card = card, cardIndex = i, player = currentPlayer }
+                
+                -- Remove from hand and mark as dragged for drag-and-drop
                 self.draggedCard = card
                 self.draggedCardIndex = i
                 card.dragging = true
+                
+                -- Set up card transform properties with physics
                 card.transform = { 
                     x = cardX, 
                     y = cardY, 
@@ -199,39 +231,52 @@ function InputHandler:handleMousePressed(x, y, button, istouch, presses)
                 }
                 card.target_transform = { x = cardX, y = cardY }
                 card.velocity = { x = 0, y = 0 }
-                card.rotation = 0
+                card.rotation = 0  -- Add rotation property
+                
+                -- Play a card pickup sound effect
+                -- This is using the existing click sound for now, but could be custom
                 EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "CardPickedUp", card)
-                flux.to(card.transform, 0.2, { y = cardY - 20 }):ease("backout")
+                
+                -- Apply a "pop up" animation when card is selected
+                flux.to(card.transform, 0.2, { 
+                    y = cardY - 20  -- Lift the card slightly
+                }):ease("backout")  -- Use a bounce effect
+                
                 table.remove(hand, i)
                 return
+                
             else
+                -- For non-targeting cards
                 local success = gm:playCardFromHand(currentPlayer, i)
+                
                 if success then
+                    -- Play card effect animation
                     flux.to({scale = 1}, 0.3, {scale = 1.2})
                         :after({scale = 1.2}, 0.1, {scale = 0})
-                        :oncomplete(function() end)
+                        :oncomplete(function()
+                            -- This would be where we'd show the card effect visually
+                        end)
                 end
                 return
             end
         end
     end
-
-    -- Process board clicks: convert screen coordinates to world coordinates using the camera.
-    local worldX, worldY = self.gameplayScene.camera:worldCoords(x, y)
+    
+    -- Board click handling
     local boardX, boardY = BoardRenderer.getBoardPosition()
     local boardWidth = TILE_SIZE * gm.board.cols
     local boardHeight = TILE_SIZE * gm.board.rows
 
-    if isPointInRect(worldX, worldY, boardX, boardY, boardWidth, boardHeight) then
-        self:handleBoardClick(worldX, worldY, boardX, boardY)
+    if isPointInRect(x, y, boardX, boardY, boardWidth, boardHeight) then
+        self:handleBoardClick(x, y, boardX, boardY)
     else
+        -- Clicked outside the board
         self:handleOutsideBoardClick()
     end
 end
 
 --------------------------------------------------
 -- handleBoardClick: Process clicks on the game board
--- Expects coordinates in world space.
 --------------------------------------------------
 function InputHandler:handleBoardClick(x, y, boardX, boardY)
     local gameplay = self.gameplayScene
@@ -241,52 +286,81 @@ function InputHandler:handleBoardClick(x, y, boardX, boardY)
     local cellX = math.floor((x - boardX) / TILE_SIZE) + 1
     local cellY = math.floor((y - boardY) / TILE_SIZE) + 1
 
+    -- Check for a tower on this tile
     local towerOnTile = gm:isTileOccupiedByTower(cellX, cellY)
 
+    -- If a card is being dragged (for minion placement)
     if self.draggedCard then
         if self.draggedCard.cardType == "Minion" then
             local validSpawnRow = (currentPlayer == gm.player1) and gm.board.rows or 1
             
             if cellY == validSpawnRow and (towerOnTile == nil) and gm.board:isEmpty(cellX, cellY) then
+                -- SIMPLIFIED APPROACH: First place the minion, then clear drag state, then animate
                 local card = self.draggedCard
                 local cardIndex = self.draggedCardIndex
+                
+                -- First clear the dragged card references - fixes stuck card issue
                 local draggedCard = self.draggedCard
                 self.draggedCard = nil
                 gameplay.pendingSummon = nil
+                
+                -- Place the minion immediately - game state change is immediate
                 local success = gm:summonMinion(currentPlayer, draggedCard, cardIndex, cellX, cellY)
+                
+                -- Publish event after successful placement
                 if success then
                     EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "CardSummoned", cellX, cellY)
                 else
+                    -- If placement fails, return card to hand
                     table.insert(currentPlayer.hand, cardIndex, draggedCard)
                     EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "CardReturnedToHand", draggedCard)
                 end
+                
                 return
             else
+                -- Invalid placement - return the card to the hand
                 local card = self.draggedCard
                 local cardIndex = self.draggedCardIndex
+                
+                -- Clear drag state immediately to avoid stuck cards
                 self.draggedCard = nil
                 gameplay.pendingSummon = nil
+                
+                -- Return card to hand
                 table.insert(currentPlayer.hand, cardIndex, card)
+                
+                -- Visual feedback for invalid placement
                 EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "InvalidPlacement", cellX, cellY)
+                
                 print("Invalid spawn position for minion.")
                 return
             end
         else
+            -- Non-minion drag-drop is not implemented
             print("Cannot drop this card on the board. Try clicking the card from your hand.")
             return
         end
     end
 
+    -- If no card is being dragged, check for minion selection/movement/attack
     if not gameplay.selectedMinion then
+        -- Try selecting your own minion
         local clickedMinion = gm.board:getMinionAt(cellX, cellY)
         if clickedMinion and clickedMinion.owner == currentPlayer then
             if clickedMinion.canAttack then
                 gameplay.selectedMinion = clickedMinion
+                
+                -- Publish minion selected event
                 EventBus.publish(EventBus.Events.MINION_SELECTED, clickedMinion)
+                
+                -- Apply selection animation
+                -- This could be a pulsing highlight or other visual effect
                 flux.to({scale = 1}, 0.2, {scale = 1.2})
                    :after({scale = 1.2}, 0.2, {scale = 1})
             else
                 print("This minion has already attacked this turn.")
+                
+                -- Show visual feedback
                 flux.to({x = clickedMinion.position.x, y = clickedMinion.position.y}, 0.1, 
                        {x = clickedMinion.position.x - 0.1, y = clickedMinion.position.y})
                    :after({x = clickedMinion.position.x - 0.1, y = clickedMinion.position.y}, 0.1, 
@@ -296,6 +370,7 @@ function InputHandler:handleBoardClick(x, y, boardX, boardY)
             end
         end
     else
+        -- We have a minion selected
         self:handleSelectedMinionAction(cellX, cellY, towerOnTile)
     end
 end
@@ -310,9 +385,14 @@ function InputHandler:handleSelectedMinionAction(cellX, cellY, towerOnTile)
     
     if selected.summoningSickness then
         print("Minion cannot act on the turn it was played.")
+        
+        -- Show visual feedback with flux
         flux.to({alpha = 1}, 0.2, {alpha = 0.5})
            :after({alpha = 0.5}, 0.2, {alpha = 1})
+           
         gameplay.selectedMinion = nil
+        
+        -- Publish minion deselected event
         EventBus.publish(EventBus.Events.MINION_DESELECTED, selected)
         return
     end
@@ -320,6 +400,8 @@ function InputHandler:handleSelectedMinionAction(cellX, cellY, towerOnTile)
     if not selected.canAttack then
         print("This minion has already attacked this turn.")
         gameplay.selectedMinion = nil
+        
+        -- Publish minion deselected event
         EventBus.publish(EventBus.Events.MINION_DESELECTED, selected)
         return
     end
@@ -328,41 +410,58 @@ function InputHandler:handleSelectedMinionAction(cellX, cellY, towerOnTile)
     local dy = math.abs(cellY - selected.position.y)
     local distance = math.max(dx, dy)
 
+    -- Attack tower?
     if towerOnTile then
+        -- Attack the tower
         if selected.canAttack then
             gameplay:resolveAttack({type = "minion", minion = selected}, {type = "tower", tower = towerOnTile})
         else
             print("This minion cannot attack right now.")
         end
         gameplay.selectedMinion = nil
+        
+        -- Publish minion deselected event
         EventBus.publish(EventBus.Events.MINION_DESELECTED, selected)
         return
     end
 
+    -- Attack or move to a minion tile?
     local clickedMinion = gm.board:getMinionAt(cellX, cellY)
     if not clickedMinion then
+        -- Move attempt
         if (not selected.hasMoved) and (distance <= selected.movement) and gm.board:isEmpty(cellX, cellY) then
             local moved = gm.board:moveMinion(selected.position.x, selected.position.y, cellX, cellY)
             if moved then
                 selected.hasMoved = true
+                
+                -- Publish minion moved event with more details
                 local oldPos = {x = selected.position.x, y = selected.position.y}
                 local newPos = {x = cellX, y = cellY}
                 EventBus.publish(EventBus.Events.MINION_MOVED, selected, oldPos, newPos)
             end
             gameplay.selectedMinion = nil
+            
+            -- Publish minion deselected event
             EventBus.publish(EventBus.Events.MINION_DESELECTED, selected)
             return
         else
             print("Minion has already moved or target cell is out of range.")
+            
+            -- Visual feedback for invalid move
             flux.to({x = 0}, 0.1, {x = 5})
                :after({x = 5}, 0.1, {x = -5})
                :after({x = -5}, 0.1, {x = 0})
+            
             gameplay.selectedMinion = nil
+            
+            -- Publish minion deselected event
             EventBus.publish(EventBus.Events.MINION_DESELECTED, selected)
             return
         end
     else
+        -- There's a minion here
         if clickedMinion.owner ~= gm:getCurrentPlayer() then
+            -- Enemy minion => Attack
             local reach = 1
             if selected.archetype == "Magic" then
                 reach = 2
@@ -373,20 +472,31 @@ function InputHandler:handleSelectedMinionAction(cellX, cellY, towerOnTile)
                 gameplay:resolveAttack({type = "minion", minion = selected}, {type = "minion", minion = clickedMinion})
             else
                 print("Target out of attack range.")
+                
+                -- Visual feedback for out of range
                 flux.to({alpha = 1}, 0.2, {alpha = 0.5})
                    :after({alpha = 0.5}, 0.2, {alpha = 1})
             end
             gameplay.selectedMinion = nil
+            
+            -- Publish minion deselected event
             EventBus.publish(EventBus.Events.MINION_DESELECTED, selected)
             return
         else
+            -- It's a friendly minion: switch selection
             if clickedMinion.canAttack then
+                -- Deselect previous minion
                 EventBus.publish(EventBus.Events.MINION_DESELECTED, selected)
+                
                 gameplay.selectedMinion = clickedMinion
+                
+                -- Select new minion
                 EventBus.publish(EventBus.Events.MINION_SELECTED, clickedMinion)
             else
                 print("This minion has already attacked this turn.")
                 gameplay.selectedMinion = nil
+                
+                -- Publish minion deselected event
                 EventBus.publish(EventBus.Events.MINION_DESELECTED, selected)
             end
             return
@@ -402,15 +512,21 @@ function InputHandler:handleOutsideBoardClick()
     local currentPlayer = gameplay.gameManager:getCurrentPlayer()
     
     if self.draggedCard then
+        -- Immediately return the card to hand with no animation to prevent stuck cards
         local cardIndex = self.draggedCardIndex
         local card = self.draggedCard
+        
+        -- Clear drag state before inserting to avoid issues
         self.draggedCard = nil
         gameplay.pendingSummon = nil
+        
+        -- Return card to hand and publish event
         table.insert(currentPlayer.hand, cardIndex, card)
         EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "CardReturnedToHand", card)
     end
     
     if gameplay.selectedMinion then
+        -- Deselect minion with event
         EventBus.publish(EventBus.Events.MINION_DESELECTED, gameplay.selectedMinion)
         gameplay.selectedMinion = nil
     end
@@ -420,8 +536,8 @@ end
 -- handleMouseReleased: Process mouse button release
 --------------------------------------------------
 function InputHandler:handleMouseReleased(x, y)
-    -- Currently no special handling needed for mouse release.
-    -- Drag and drop is managed via clicks.
+    -- Currently no special handling needed for mouse release
+    -- Drag and drop is handled via clicks not drag/release
 end
 
 --------------------------------------------------
@@ -436,9 +552,14 @@ function InputHandler:cancelDraggedCard()
     local cardIndex = self.draggedCardIndex
     local card = self.draggedCard
     
+    -- Clear drag state
     self.draggedCard = nil
     self.gameplayScene.pendingSummon = nil
+    
+    -- Return card to hand
     table.insert(hand, cardIndex, card)
+    
+    -- Notify system
     EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "CardDragCancelled", card)
     
     return true

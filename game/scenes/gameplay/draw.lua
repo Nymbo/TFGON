@@ -3,7 +3,6 @@
 -- Updated with support for targeting indicators
 -- Now includes animation rendering with safe handling
 -- Enhanced with flux-powered card animations
--- Integrated with the camera system for dynamic view
 
 local BoardRenderer = require("game.ui.boardrenderer")
 local CardRenderer = require("game.ui.cardrenderer")
@@ -44,43 +43,17 @@ local cardVisuals = {
     repositionNeeded = false  -- Flag to trigger repositioning
 }
 
--- Enhanced background drawing that works with camera
-local function drawScaledBackground(image, alpha, camera)
+local function drawScaledBackground(image, alpha)
     alpha = alpha or 1
     local windowW, windowH = love.graphics.getWidth(), love.graphics.getHeight()
     local bgW, bgH = image:getWidth(), image:getHeight()
-    
-    -- Make the background a bit larger than the screen for parallax effect
-    local scale = math.max(windowW / bgW, windowH / bgH) * 1.2 -- Scale up by 20%
-    
-    -- Draw a world-space backdrop first (this will be affected by camera)
-    if camera then
-        -- Draw with camera (parallax effect)
-        camera:attach()
-        -- Calculate offsets for camera parallax (the background moves slower than foreground)
-        local camX, camY = camera:position()
-        local centerX, centerY = windowW / 2, windowH / 2
-        local offsetX = (camX - centerX) * 0.2 -- Parallax factor
-        local offsetY = (camY - centerY) * 0.2 -- Parallax factor
-        
-        -- Position at center and apply parallax offset
-        local x = centerX - (bgW * scale) / 2 - offsetX
-        local y = centerY - (bgH * scale) / 2 - offsetY
-        
-        -- Draw the background with parallax
-        love.graphics.setColor(1, 1, 1, alpha)
-        love.graphics.draw(image, x, y, 0, scale, scale)
-        love.graphics.setColor(1, 1, 1, 1)
-        camera:detach()
-    else
-        -- Fallback to old method if no camera
-        local offsetX = (windowW - bgW * scale) / 2
-        local offsetY = (windowH - bgH * scale) / 2
-        love.graphics.setColor(1, 1, 1, alpha)
-        love.graphics.draw(image, offsetX, offsetY, 0, scale, scale)
-        love.graphics.setColor(1, 1, 1, 1)
-    end
-}
+    local scale = math.max(windowW / bgW, windowH / bgH)
+    local offsetX = (windowW - bgW * scale) / 2
+    local offsetY = (windowH - bgH * scale) / 2
+    love.graphics.setColor(1, 1, 1, alpha)
+    love.graphics.draw(image, offsetX, offsetY, 0, scale, scale)
+    love.graphics.setColor(1, 1, 1, 1)
+end
 
 -- Initialize a new card's visual state
 local function initCardVisual(card, index, hand)
@@ -157,24 +130,11 @@ end
 local DrawSystem = {}
 
 function DrawSystem.drawGameplayScene(gameplay)
-    local camera = gameplay.camera
-    
-    -- Draw the background with camera effects
     if gameplay.background then
-        drawScaledBackground(gameplay.background, 0.5, camera)
-        
-        -- Additional fog/atmosphere layer for depth
-        love.graphics.setColor(0.3, 0.3, 0.4, 0.3) -- Subtle atmospheric fog
-        love.graphics.rectangle("fill", 0, 0, love.graphics.getWidth(), love.graphics.getHeight())
-        love.graphics.setColor(1, 1, 1, 1)
+        drawScaledBackground(gameplay.background, 0.5)
     end
 
     local gm = gameplay.gameManager
-    
-    -- Start camera for world elements
-    camera:attach()
-    
-    -- Draw the game board with the camera transformation
     BoardRenderer.drawBoard(
         gm.board,
         gm.player1,
@@ -184,18 +144,7 @@ function DrawSystem.drawGameplayScene(gameplay)
         gm,
         gameplay.pendingSummon
     )
-    
-    -- Draw all active animations within camera space (if available)
-    if AnimationManager then
-        pcall(function()
-            AnimationManager:draw()
-        end)
-    end
-    
-    -- End camera transformations
-    camera:detach()
-    
-    -- Draw UI elements (fixed on screen, not affected by camera)
+
     local currentPlayer = gm:getCurrentPlayer()
     local hand = currentPlayer.hand
     local cardWidth, cardHeight = CardRenderer.getCardDimensions()
@@ -253,6 +202,13 @@ function DrawSystem.drawGameplayScene(gameplay)
             -- Also create visual state for next frame
             initCardVisual(card, i, hand)
         end
+    end
+
+    -- Draw all active animations (if available)
+    if AnimationManager then
+        pcall(function()
+            AnimationManager:draw()
+        end)
     end
 
     -- Draw 'End Turn' button using theme
@@ -405,18 +361,6 @@ function DrawSystem.drawGameplayScene(gameplay)
     end
 
     love.graphics.setColor(1, 1, 1, 1)
-    
-    -- Draw camera debug info if in debug mode
-    if Debug and Debug.ENABLED then
-        local debugY = 60
-        love.graphics.setFont(Theme.fonts.body)
-        love.graphics.setColor(1, 1, 0, 0.8)
-        love.graphics.print("Camera Position: " .. math.floor(camera.x) .. ", " .. math.floor(camera.y), 20, debugY)
-        love.graphics.print("Camera Zoom: " .. string.format("%.2f", camera.scale), 20, debugY + 20)
-        love.graphics.print("Camera Rotation: " .. string.format("%.1f°", math.deg(camera.rot)), 20, debugY + 40)
-        love.graphics.print("Press R to reset camera, +/- to zoom", 20, debugY + 60)
-        love.graphics.setColor(1, 1, 1, 1)
-    end
 end
 
 -- Call this when a card is drawn by the player to trigger animations
