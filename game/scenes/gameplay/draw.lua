@@ -40,7 +40,8 @@ local END_TURN_BUTTON = {
 local cardVisuals = {
     cards = {},  -- Will store visual state for each card
     lastHandSize = 0,  -- Track changes in hand size
-    repositionNeeded = false  -- Flag to trigger repositioning
+    repositionNeeded = false,  -- Flag to trigger repositioning
+    animationInProgress = false -- Track if any card animation is in progress
 }
 
 local function drawScaledBackground(image, alpha)
@@ -73,10 +74,12 @@ local function initCardVisual(card, index, hand)
             scale = 0.8,  -- Start slightly smaller
             rotation = 0.2,  -- Slight initial rotation
             alpha = 0.8,  -- Start slightly transparent
-            isNew = true
+            isNew = true,
+            removing = false -- Ensure it's initialized as not removing
         }
         
         -- Animate it into position
+        cardVisuals.animationInProgress = true
         flux.to(cardVisuals.cards[card], 0.5, {
             x = targetX,
             y = cardY,
@@ -84,37 +87,50 @@ local function initCardVisual(card, index, hand)
             rotation = 0,
             alpha = 1
         }):ease("backout") -- Bouncy effect
+        :oncomplete(function()
+            cardVisuals.animationInProgress = false
+            cardVisuals.cards[card].isNew = false
+        end)
     else
         -- Update the target position for existing card
         cardVisuals.cards[card].targetX = targetX
         cardVisuals.cards[card].targetY = cardY
         
+        -- Ensure the removing flag is reset if the card is back in hand
+        cardVisuals.cards[card].removing = false
+        
         -- Animate to new position if it's significantly different
         if math.abs(cardVisuals.cards[card].x - targetX) > 5 then
+            cardVisuals.animationInProgress = true
             flux.to(cardVisuals.cards[card], 0.3, {
                 x = targetX,
                 y = cardY
             }):ease("quadout")
+            :oncomplete(function()
+                cardVisuals.animationInProgress = false
+            end)
         end
     end
 end
 
 -- Clean up card visuals that are no longer in hand
 local function cleanupCardVisuals(hand)
+    -- Create a set of cards currently in hand for O(1) lookups
     local cardsInHand = {}
-    
-    -- Mark cards that are currently in hand
     for _, card in ipairs(hand) do
         cardsInHand[card] = true
     end
     
-    -- Remove visuals for cards no longer in hand
+    -- Check each visual and mark those no longer in hand for removal
+    local hasRemoving = false
     for card, visual in pairs(cardVisuals.cards) do
         if not cardsInHand[card] and not visual.removing then
             -- Card is no longer in hand, animate it away
             visual.removing = true
+            hasRemoving = true
             
             -- Animate the card moving up and fading out
+            cardVisuals.animationInProgress = true
             flux.to(visual, 0.3, {
                 y = visual.y - 100,
                 alpha = 0,
@@ -122,8 +138,15 @@ local function cleanupCardVisuals(hand)
             }):ease("quadout")
             :oncomplete(function()
                 cardVisuals.cards[card] = nil
+                cardVisuals.animationInProgress = false
             end)
         end
+    end
+    
+    -- Only trigger repositioning if we've actually removed cards and
+    -- no animations are in progress
+    if hasRemoving and not cardVisuals.animationInProgress then
+        cardVisuals.repositionNeeded = true
     end
 end
 
@@ -155,8 +178,9 @@ function DrawSystem.drawGameplayScene(gameplay)
         cardVisuals.lastHandSize = #hand
     end
     
-    -- Initialize or update card visuals
-    if cardVisuals.repositionNeeded then
+    -- Initialize or update card visuals if needed
+    if cardVisuals.repositionNeeded and not cardVisuals.animationInProgress then
+        -- Recalculate positions for all cards
         for i, card in ipairs(hand) do
             initCardVisual(card, i, hand)
         end
@@ -168,6 +192,11 @@ function DrawSystem.drawGameplayScene(gameplay)
     for i, card in ipairs(hand) do
         if cardVisuals.cards[card] then
             local visual = cardVisuals.cards[card]
+            
+            -- Skip drawing cards being removed and fully transparent
+            if visual.removing and visual.alpha <= 0 then
+                goto continue
+            end
             
             -- Save current graphics state
             love.graphics.push()
@@ -190,7 +219,10 @@ function DrawSystem.drawGameplayScene(gameplay)
             love.graphics.pop()
             love.graphics.setColor(1, 1, 1, 1)
         else
-            -- Fallback for cards without visuals (shouldn't happen)
+            -- Fallback for cards without visuals - create them now
+            initCardVisual(card, i, hand)
+            
+            -- Draw a placeholder until the visual is ready
             local totalWidth = #hand * (cardWidth + 10)
             local startX = (love.graphics.getWidth() - totalWidth) / 2
             local cardY = love.graphics.getHeight() - cardHeight - 20
@@ -198,10 +230,9 @@ function DrawSystem.drawGameplayScene(gameplay)
             
             local isPlayable = (card.cost <= currentPlayer.manaCrystals)
             CardRenderer.drawCard(card, cardX, cardY, isPlayable)
-            
-            -- Also create visual state for next frame
-            initCardVisual(card, i, hand)
         end
+        
+        ::continue::
     end
 
     -- Draw all active animations (if available)
@@ -383,6 +414,7 @@ function DrawSystem.onCardPlayed(card)
         visual.removing = true
         
         -- Animate the card moving up and fading out
+        cardVisuals.animationInProgress = true
         flux.to(visual, 0.3, {
             y = visual.y - 200,
             alpha = 0,
@@ -391,6 +423,7 @@ function DrawSystem.onCardPlayed(card)
         }):ease("quadout")
         :oncomplete(function()
             cardVisuals.cards[card] = nil
+            cardVisuals.animationInProgress = false
             cardVisuals.repositionNeeded = true
         end)
     end
