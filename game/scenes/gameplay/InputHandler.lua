@@ -545,7 +545,7 @@ end
 --------------------------------------------------
 function InputHandler:cancelDraggedCard()
     if not self.draggedCard then
-        return falsea
+        return false
     end
     
     local hand = self.gameplayScene.gameManager:getCurrentPlayer().hand
