@@ -1,11 +1,13 @@
 -- game/scenes/gameplay/GameplayScene.lua
 -- Core gameplay scene that orchestrates all components
 -- Acts as the main entry point for the gameplay scene
+-- Now with camera system integration for dynamic view
 
 local GameManager = require("game.managers.gamemanager")
 local EventBus = require("game.eventbus")
 local ErrorLog = require("game.utils.errorlog")
 local flux = require("libs.flux")  -- For animations
+local Camera = require("libs.hump.camera")  -- Added camera module
 
 -- Load component modules
 local DrawSystem = require("game.scenes.gameplay.draw")
@@ -132,6 +134,26 @@ function GameplayScene:new(changeSceneCallback, selectedDeck, selectedBoard, aiO
     self.gameOverWinner = nil
     self.waitingForAnimation = false
     
+    -- Initialize camera
+    local screenWidth, screenHeight = love.graphics.getDimensions()
+    local centerX, centerY = screenWidth / 2, screenHeight / 2
+    
+    -- Create camera with slight angle and zoom
+    self.camera = Camera(centerX, centerY, 1.0) -- Initial position at center
+    self.camera:rotate(math.rad(15)) -- 15 degree angle like MTG Arena
+    
+    -- Camera settings
+    self.cameraSettings = {
+        targetZoom = 1.0,
+        rotationAngle = math.rad(15),
+        initialOffset = {x = 0, y = 0}, -- For adjusting camera position
+        damping = 0.1, -- For smooth camera movement
+        zoomSpeed = 0.1 -- For smooth zoom
+    }
+    
+    -- Set camera smoother for more natural movements
+    self.camera.smoother = Camera.smooth.damped(5)
+    
     -- Initialize components
     self.stateManager = StateManager:new(self)
     self.targetingSystem = TargetingSystem:new(self)
@@ -155,7 +177,7 @@ function GameplayScene:new(changeSceneCallback, selectedDeck, selectedBoard, aiO
     end
 
     -- Start the first turn to initialize the game
-    ErrorLog.logError("Starting first game turn", true)
+    ErrorLog.logError("Starting first turn", true)
     success, err = pcall(function()
         self.gameManager:startTurn()
     end)
@@ -164,8 +186,108 @@ function GameplayScene:new(changeSceneCallback, selectedDeck, selectedBoard, aiO
         ErrorLog.logError("ERROR starting first turn: " .. tostring(err))
     end
     
+    -- Subscribe to events that might affect camera
+    self:setupCameraEvents()
+    
     ErrorLog.logError("Gameplay scene initialization complete", true)
     return self
+end
+
+--------------------------------------------------
+-- setupCameraEvents: Set up event subscriptions for camera effects
+--------------------------------------------------
+function GameplayScene:setupCameraEvents()
+    table.insert(self.eventHandlers.eventSubscriptions, EventBus.subscribe(
+        EventBus.Events.MINION_ATTACKED,
+        function(attacker, target)
+            -- Add camera shake effect on attacks
+            self:shakeCamera(0.5) -- Mild shake
+        end,
+        "CameraShakeOnAttack"
+    ))
+    
+    table.insert(self.eventHandlers.eventSubscriptions, EventBus.subscribe(
+        EventBus.Events.TOWER_DAMAGED,
+        function(tower, attacker, damage)
+            -- More intense shake when towers are damaged
+            self:shakeCamera(1.0) -- Stronger shake
+        end,
+        "CameraShakeOnTowerDamage"
+    ))
+    
+    table.insert(self.eventHandlers.eventSubscriptions, EventBus.subscribe(
+        EventBus.Events.CARD_PLAYED,
+        function(player, card)
+            -- Subtle camera movement when a card is played
+            if card.cardType == "Spell" then
+                self:shakeCamera(0.7) -- Medium shake for spells
+            end
+        end,
+        "CameraEffectOnCardPlay"
+    ))
+end
+
+--------------------------------------------------
+-- shakeCamera: Add a shake effect to the camera
+--------------------------------------------------
+function GameplayScene:shakeCamera(intensity)
+    local shake = intensity or 0.5
+    local screenW, screenH = love.graphics.getDimensions()
+    
+    -- Cancel any existing shake animations
+    if self.shakeAnimation then
+        flux.cancel(self.shakeAnimation)
+    end
+    
+    -- Current camera position
+    local currentX, currentY = self.camera:position()
+    
+    -- Apply random offset based on intensity
+    local offsetX = (math.random() - 0.5) * shake * 10
+    local offsetY = (math.random() - 0.5) * shake * 10
+    
+    -- Move camera to create shake
+    self.camera:lookAt(currentX + offsetX, currentY + offsetY)
+    
+    -- Animate back to original position
+    self.shakeAnimation = flux.to(self, 0.3, { 
+        dummy = 1  -- Dummy property for the animation
+    }):onupdate(function()
+        -- Gradually move back to center during the animation
+        local factor = 1 - self.shakeAnimation._t -- Remaining animation time (0 to 1)
+        local dampenedX = currentX + offsetX * factor
+        local dampenedY = currentY + offsetY * factor
+        self.camera:lookAt(dampenedX, dampenedY)
+    end)
+end
+
+--------------------------------------------------
+-- updateCamera: Handle camera updates
+--------------------------------------------------
+function GameplayScene:updateCamera(dt)
+    -- Example of camera movement based on mouse position if desired
+    -- local mx, my = love.mouse.getPosition()
+    -- local windowW, windowH = love.graphics.getDimensions()
+    -- local edgeThreshold = 100 -- pixels from edge to start moving
+    
+    -- -- Move camera if mouse is near the edge
+    -- if mx < edgeThreshold then
+    --     self.camera:move(-2, 0) -- Move left
+    -- elseif mx > windowW - edgeThreshold then
+    --     self.camera:move(2, 0) -- Move right
+    -- end
+    
+    -- if my < edgeThreshold then
+    --     self.camera:move(0, -2) -- Move up
+    -- elseif my > windowH - edgeThreshold then
+    --     self.camera:move(0, 2) -- Move down
+    -- end
+    
+    -- Optional: smooth zoom animation
+    if self.camera.scale ~= self.cameraSettings.targetZoom then
+        local zoomDiff = self.cameraSettings.targetZoom - self.camera.scale
+        self.camera.scale = self.camera.scale + zoomDiff * self.cameraSettings.zoomSpeed
+    end
 end
 
 --------------------------------------------------
@@ -176,6 +298,9 @@ function GameplayScene:update(dt)
     flux.update(dt)
     
     pcall(function()
+        -- Update camera
+        self:updateCamera(dt)
+    
         self.gameManager:update(dt)
         self.endTurnHovered = InputHandler.checkEndTurnHover(self)
         
@@ -224,6 +349,7 @@ function GameplayScene:draw()
             self.targetingSystem:drawTargetingIndicators()
         end
     
+        -- Game over popup and other UI elements are drawn outside the camera
         if self.showGameOverPopup then
             self.gameOverManager:drawGameOverPopup()
         end
@@ -260,14 +386,17 @@ function GameplayScene:mousepressed(x, y, button, istouch, presses)
         return
     end
     
+    -- Convert screen coordinates to world coordinates for camera
+    local wx, wy = self.camera:worldCoords(x, y)
+    
     -- Let targeting system handle clicks if there is a pending effect
     if self.targetingSystem:hasPendingEffect() then
-        self.targetingSystem:handleTargetingClick(x, y)
+        self.targetingSystem:handleTargetingClick(wx, wy)
         return
     end
     
-    -- Otherwise, delegate to input handler
-    self.inputHandler:handleMousePressed(x, y, button, istouch, presses)
+    -- Otherwise, delegate to input handler with world coordinates
+    self.inputHandler:handleMousePressed(wx, wy, button, istouch, presses)
 end
 
 --------------------------------------------------
@@ -298,6 +427,25 @@ function GameplayScene:keypressed(key)
         end
         
         self.changeSceneCallback("mainmenu")
+    elseif key == "=" or key == "+" then
+        -- Zoom in
+        self.cameraSettings.targetZoom = self.cameraSettings.targetZoom * 1.1
+        if self.cameraSettings.targetZoom > 1.5 then
+            self.cameraSettings.targetZoom = 1.5 -- Max zoom
+        end
+    elseif key == "-" or key == "_" then
+        -- Zoom out
+        self.cameraSettings.targetZoom = self.cameraSettings.targetZoom / 1.1
+        if self.cameraSettings.targetZoom < 0.7 then
+            self.cameraSettings.targetZoom = 0.7 -- Min zoom
+        end
+    elseif key == "r" then
+        -- Reset camera
+        local screenWidth, screenHeight = love.graphics.getDimensions()
+        self.camera:lookAt(screenWidth / 2, screenHeight / 2)
+        self.cameraSettings.targetZoom = 1.0
+        self.camera.scale = 1.0
+        self.camera:rotateTo(self.cameraSettings.rotationAngle)
     end
 end
 
@@ -318,9 +466,32 @@ end
 -- mousereleased: Handle mouse button release
 --------------------------------------------------
 function GameplayScene:mousereleased(x, y, button)
+    -- Convert to world coordinates for camera
+    local wx, wy = self.camera:worldCoords(x, y)
+    
     -- Delegate to input handler
     if button == 1 then
-        self.inputHandler:handleMouseReleased(x, y)
+        self.inputHandler:handleMouseReleased(wx, wy)
+    end
+end
+
+--------------------------------------------------
+-- wheelmoved: Handle mouse wheel for zooming
+--------------------------------------------------
+function GameplayScene:wheelmoved(x, y)
+    -- Use mouse wheel for camera zoom
+    if y > 0 then
+        -- Zoom in
+        self.cameraSettings.targetZoom = self.cameraSettings.targetZoom * 1.05
+        if self.cameraSettings.targetZoom > 1.5 then
+            self.cameraSettings.targetZoom = 1.5 -- Max zoom
+        end
+    elseif y < 0 then
+        -- Zoom out
+        self.cameraSettings.targetZoom = self.cameraSettings.targetZoom / 1.05
+        if self.cameraSettings.targetZoom < 0.7 then
+            self.cameraSettings.targetZoom = 0.7 -- Min zoom
+        end
     end
 end
 

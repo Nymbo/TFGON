@@ -2,6 +2,7 @@
 -- This is the entry point for the LOVE 2D application.
 -- Updated to include EventBus, EventMonitor, and AnimationManager
 -- Now with dedicated error logging and flux animation library
+-- Added support for hump.camera and improved camera controls
 
 --------------------------------------------------
 -- First, load the error logging system right away
@@ -17,6 +18,19 @@ local Debug = require("game.utils.debug")
 local EventBus = require("game.eventbus")
 local EventMonitor = require("game.tools.eventmonitor")
 local flux = require("libs.flux")  -- Add flux for animations
+
+-- Try to load Camera module from hump library
+local Camera = nil
+local success, result = pcall(function()
+    return require("libs.hump.camera")
+end)
+
+if success then
+    Camera = result
+    ErrorLog.logError("Camera module loaded successfully", true)
+else
+    ErrorLog.logError("Failed to load Camera module: " .. tostring(result))
+end
 
 -- Try to load Animation Manager but fail gracefully
 local AnimationManager = nil
@@ -65,6 +79,13 @@ function love.load()
         -- Initialize EventBus
         EventBus.setDebugMode(Debug.ENABLED)
         Debug.info("EventBus initialized")
+        
+        -- Check Camera module status
+        if Camera then
+            Debug.info("Camera module ready")
+        else
+            Debug.error("Camera module not available - game will run with static camera")
+        end
         
         -- Check AnimationManager status
         if AnimationManager then
@@ -151,11 +172,20 @@ end
 --------------------------------------------------
 -- love.keypressed(key):
 -- Passes keyboard inputs to the SceneManager.
+-- Now handles additional camera control keys.
 --------------------------------------------------
 function love.keypressed(key)
     -- Log critical keystrokes
     if key == "escape" then
         ErrorLog.logError("Escape key pressed", true)
+    end
+    
+    -- Camera control keys:
+    -- +/- for zoom, r for reset, arrow keys for movement
+    if key == "+" or key == "=" or key == "-" or key == "_" or
+       key == "r" or key == "up" or key == "down" or 
+       key == "left" or key == "right" then
+        ErrorLog.logError("Camera control key pressed: " .. key, true)
     end
     
     -- Wrap in pcall to catch errors
@@ -198,7 +228,7 @@ end
 
 --------------------------------------------------
 -- love.wheelmoved(x, y):
--- Handles mouse wheel movement.
+-- Handles mouse wheel movement for camera zoom.
 --------------------------------------------------
 function love.wheelmoved(x, y)
     -- Wrap in pcall to catch errors
@@ -207,6 +237,20 @@ function love.wheelmoved(x, y)
         if not EventMonitor.wheelmoved(x, y) then
             -- If EventMonitor didn't consume it, pass to SceneManager
             SceneManager:wheelmoved(x, y)
+        end
+    end)
+end
+
+--------------------------------------------------
+-- love.mousemoved(x, y, dx, dy):
+-- Handles mouse movement for various effects.
+--------------------------------------------------
+function love.mousemoved(x, y, dx, dy)
+    -- Wrap in pcall to catch errors
+    pcall(function()
+        -- Pass mouse movement to the scene if it has a handler
+        if SceneManager.currentScene and SceneManager.currentScene.mousemoved then
+            SceneManager.currentScene:mousemoved(x, y, dx, dy)
         end
     end)
 end

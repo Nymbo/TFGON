@@ -1,485 +1,613 @@
--- game/ui/boardrenderer.lua
--- Renders the grid-based board with variable dimensions and tooltips
--- Updated to draw multiple towers per player.
--- Now with improved weapon visuals and unified tooltip system.
--- Added visual indicator for Glancing Blows effect
+-- game/scenes/gameplay/InputHandler.lua
+-- Handles all input processing for the gameplay scene
+-- Manages card dragging, minion selection, and button interactions
+-- Updated to work with camera system
 
-local BoardRenderer = {}
+local CardRenderer = require("game.ui.cardrenderer")
+local BoardRenderer = require("game.ui.boardrenderer")
 local Theme = require("game.ui.theme")
-local Tooltip = require("game.ui.tooltip")
+local EventBus = require("game.eventbus")
+local flux = require("libs.flux")  -- For animations
 
-local TILE_SIZE = 100
-local boardX = 0  -- Will be calculated based on board size
-local boardY = 50 -- Top margin
+local InputHandler = {}
+InputHandler.__index = InputHandler
 
-local boardFonts = nil
+local END_TURN_BUTTON = {
+    width = Theme.dimensions.buttonWidth,
+    height = Theme.dimensions.buttonHeight
+}
 
-local CIRCLE_RADIUS = 12
-local CARD_CORNER_RADIUS = 6
-local PAD_X = 14
-local PAD_Y = 14
-
--- Attack pattern overlay image (red diagonal)
-local attackPattern = love.graphics.newImage("assets/images/pattern_diagonal_red_small.png")
--- Transparent pattern for valid spawn cells
-local transparentPattern = love.graphics.newImage("assets/images/pattern_diagonal_transparent_small.png")
-
--- Track the currently hovered minion
-local hoveredMinion = nil
+local TILE_SIZE = BoardRenderer.getTileSize()
 
 --------------------------------------------------
--- Helper function to check if a point is within a tile
+-- Constructor for InputHandler
 --------------------------------------------------
-local function isPointInTile(x, y, tileX, tileY)
-    return x >= tileX and x < tileX + TILE_SIZE and
-           y >= tileY and y < tileY + TILE_SIZE
+function InputHandler:new(gameplayScene)
+    local self = setmetatable({}, InputHandler)
+    self.gameplayScene = gameplayScene
+    
+    -- Properties for drag-and-drop with improved physics
+    self.draggedCard = nil
+    self.draggedCardIndex = nil
+    
+    -- Subscribe to events
+    self.eventSubscriptions = {}
+    self:initEventSubscriptions()
+    
+    return self
 end
 
 --------------------------------------------------
--- Helper: Get the reach of a minion based on its archetype
+-- initEventSubscriptions: Set up event listeners
 --------------------------------------------------
-local function getMinionReach(minion)
-    if minion.archetype == "Melee" then
-        return 1
-    elseif minion.archetype == "Magic" then
-        return 2
-    elseif minion.archetype == "Ranged" then
-        return 3
+function InputHandler:initEventSubscriptions()
+    -- Add event subscriptions for input handling
+    table.insert(self.eventSubscriptions, EventBus.subscribe(
+        EventBus.Events.UI_BUTTON_CLICKED,
+        function(x, y, button)
+            -- Could handle global UI clicks here if needed
+        end,
+        "InputHandler-ButtonClick"
+    ))
+    
+    -- Add more event subscriptions as needed
+end
+
+--------------------------------------------------
+-- destroy: Clean up resources
+--------------------------------------------------
+function InputHandler:destroy()
+    -- Clean up event subscriptions
+    for _, sub in ipairs(self.eventSubscriptions) do
+        EventBus.unsubscribe(sub)
     end
-    return 1
+    self.eventSubscriptions = {}
 end
 
 --------------------------------------------------
--- Helper: Check if a minion is in attack range of another
+-- isPointInRect: Helper function to check if a point is in a rectangle
 --------------------------------------------------
-local function isInAttackRange(attacker, target)
-    if not attacker.position or not target.position then
-        return false
-    end
-    local dx = math.abs(attacker.position.x - target.position.x)
-    local dy = math.abs(attacker.position.y - target.position.y)
-    local distance = math.max(dx, dy)
-    return distance <= getMinionReach(attacker)
+local function isPointInRect(x, y, rx, ry, rw, rh)
+    return x >= rx and x <= rx + rw and y >= ry and y <= ry + rh
 end
 
 --------------------------------------------------
--- drawStatCircle: Helper to draw stat circles
+-- checkEndTurnHover: Check if mouse is over End Turn button
 --------------------------------------------------
-local function drawStatCircle(x, y, value, circleColor, bgColor)
-    love.graphics.setColor(bgColor)
-    love.graphics.circle("fill", x, y, CIRCLE_RADIUS + 2)
-    love.graphics.setColor(circleColor)
-    love.graphics.circle("fill", x, y, CIRCLE_RADIUS)
-    love.graphics.setColor(0, 0, 0, 0.5)
-    love.graphics.circle("line", x, y, CIRCLE_RADIUS)
-
-    local valueStr = tostring(value)
-    love.graphics.setFont(boardFonts.cardStat)
-    local textWidth = boardFonts.cardStat:getWidth(valueStr)
-    local textHeight = boardFonts.cardStat:getHeight()
-    local textX = x - textWidth / 2
-    local textY = y - textHeight / 2
-
-    love.graphics.setColor(0, 0, 0, 1)
-    love.graphics.print(valueStr, textX - 1, textY)
-    love.graphics.print(valueStr, textX + 1, textY)
-    love.graphics.print(valueStr, textX, textY - 1)
-    love.graphics.print(valueStr, textX, textY + 1)
-    love.graphics.setColor(Theme.colors.textPrimary)
-    love.graphics.print(valueStr, textX, textY)
+function InputHandler.checkEndTurnHover(gameplayScene)
+    local mx, my = love.mouse.getPosition()
+    local buttonX = love.graphics.getWidth() - END_TURN_BUTTON.width - 20
+    local buttonY = love.graphics.getHeight() / 2 - END_TURN_BUTTON.height / 2
+    return isPointInRect(mx, my, buttonX, buttonY, END_TURN_BUTTON.width, END_TURN_BUTTON.height)
 end
 
 --------------------------------------------------
--- drawWeaponIcon: Helper to show a minion has a weapon
--- Now improved with a larger durability tracker
+-- updateDraggedCard: Update physics for dragged card
 --------------------------------------------------
-local function drawWeaponIcon(x, y, minion)
-    if not minion.weapon then return end
+function InputHandler:updateDraggedCard(dt)
+    if not self.draggedCard then return end
     
-    -- Draw weapon durability circle in the top-middle of the minion card
-    -- Using the same size as other stat circles
-    local weaponX = x + TILE_SIZE/2
-    local weaponY = y + PAD_Y
+    local cardWidth, cardHeight = CardRenderer.getCardDimensions()
+    local mx, my = love.mouse.getPosition()
     
-    -- Draw durability stat circle (matching other stat circles)
-    love.graphics.setColor(0.8, 0.7, 0.2, 1) -- Gold background
-    love.graphics.circle("fill", weaponX, weaponY, CIRCLE_RADIUS + 2) -- Slightly larger background
+    -- Calculate target position (where the card should go)
+    local targetX = mx - cardWidth / 2
+    local targetY = my - cardHeight / 2
     
-    love.graphics.setColor(0.6, 0.5, 0.1, 1) -- Darker gold for the main circle
-    love.graphics.circle("fill", weaponX, weaponY, CIRCLE_RADIUS)
+    -- Set the target transform
+    self.draggedCard.target_transform = self.draggedCard.target_transform or {}
+    self.draggedCard.target_transform.x = targetX
+    self.draggedCard.target_transform.y = targetY
     
-    love.graphics.setColor(0, 0, 0, 0.5)
-    love.graphics.circle("line", weaponX, weaponY, CIRCLE_RADIUS)
+    -- Initialize transform if needed
+    self.draggedCard.transform = self.draggedCard.transform or {x = targetX, y = targetY}
+    self.draggedCard.velocity = self.draggedCard.velocity or {x = 0, y = 0}
     
-    -- Draw durability value
-    local durabilityStr = tostring(minion.weapon.durability)
-    love.graphics.setFont(boardFonts.cardStat)
-    local textWidth = boardFonts.cardStat:getWidth(durabilityStr)
-    local textHeight = boardFonts.cardStat:getHeight()
-    local textX = weaponX - textWidth / 2
-    local textY = weaponY - textHeight / 2
+    -- Calculate distance from current to target
+    local distX = targetX - self.draggedCard.transform.x
+    local distY = targetY - self.draggedCard.transform.y
     
-    -- Text outline for better visibility
-    love.graphics.setColor(0, 0, 0, 1)
-    love.graphics.print(durabilityStr, textX - 1, textY)
-    love.graphics.print(durabilityStr, textX + 1, textY)
-    love.graphics.print(durabilityStr, textX, textY - 1)
-    love.graphics.print(durabilityStr, textX, textY + 1)
+    -- Calculate new velocity with smoothing
+    local elasticity = 8.0  -- Higher values make card more responsive/elastic
+    local damping = 0.8    -- Damping factor to prevent oscillation
     
-    -- Main text color
+    -- Apply forces to velocity
+    self.draggedCard.velocity.x = self.draggedCard.velocity.x * damping + distX * elasticity * dt
+    self.draggedCard.velocity.y = self.draggedCard.velocity.y * damping + distY * elasticity * dt
+    
+    -- Apply velocity to position
+    self.draggedCard.transform.x = self.draggedCard.transform.x + self.draggedCard.velocity.x
+    self.draggedCard.transform.y = self.draggedCard.transform.y + self.draggedCard.velocity.y
+    
+    -- Add a slight rotation based on horizontal velocity
+    -- This creates a natural "turning" effect when moving the card
+    local maxRotation = 0.1  -- Maximum rotation in radians
+    self.draggedCard.rotation = -self.draggedCard.velocity.x * 0.01  -- Scale factor to control rotation amount
+    
+    -- Clamp rotation to prevent excessive spinning
+    self.draggedCard.rotation = math.max(-maxRotation, math.min(maxRotation, self.draggedCard.rotation))
+    
+    -- Publish card movement event so other systems can react
+    EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "CardDragged", self.draggedCard, self.draggedCard.transform.x, self.draggedCard.transform.y)
+end
+
+--------------------------------------------------
+-- drawDraggedCard: Render dragged card with physics effects
+--------------------------------------------------
+function InputHandler:drawDraggedCard()
+    if not self.draggedCard then return end
+    
+    local cardWidth, cardHeight = CardRenderer.getCardDimensions()
+    
+    love.graphics.setColor(1, 1, 1, 0.5)
+    
+    -- Save the current transform state
+    love.graphics.push()
+    
+    -- Move to the card's position
+    love.graphics.translate(
+        self.draggedCard.transform.x + cardWidth/2,
+        self.draggedCard.transform.y + cardHeight/2
+    )
+    
+    -- Apply rotation
+    love.graphics.rotate(self.draggedCard.rotation or 0)
+    
+    -- Draw the card centered at the origin
+    CardRenderer.drawCard(
+        self.draggedCard, 
+        -cardWidth/2,
+        -cardHeight/2, 
+        true
+    )
+    
+    -- Restore the previous transform state
+    love.graphics.pop()
+    
     love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.print(durabilityStr, textX, textY)
-    
-    -- Draw a weapon overlay/nameplate at the bottom of the minion card
-    local plateX = x
-    local plateY = y + TILE_SIZE - 3 -- Position at bottom, slightly overlapping
-    local plateWidth = TILE_SIZE
-    local plateHeight = 20
-    
-    -- Gray background with gold border
-    love.graphics.setColor(0.3, 0.3, 0.35, 0.9) -- #4c4c59 with slight transparency
-    love.graphics.rectangle("fill", plateX, plateY, plateWidth, plateHeight, 4)
-    
-    -- Gold border (same as card outline)
-    love.graphics.setColor(0.8, 0.7, 0.5, 1) -- Gold border color
-    love.graphics.setLineWidth(2)
-    love.graphics.rectangle("line", plateX, plateY, plateWidth, plateHeight, 4)
-    love.graphics.setLineWidth(1)
-    
-    -- Weapon name
-    love.graphics.setFont(boardFonts.cardType) -- Using smaller font for the weapon name
-    love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.printf(minion.weapon.name, plateX + 3, plateY + 3, plateWidth - 6, "center")
 end
 
 --------------------------------------------------
--- drawGlancingBlowsIndicator: Helper to show a minion has Glancing Blows
+-- convertScreenToWorldCoords: Convert screen coordinates to world coordinates
 --------------------------------------------------
-local function drawGlancingBlowsIndicator(x, y, minion)
-    if not minion.glancingBlows then return end
-    
-    -- Draw Glancing Blows indicator in the top-middle of the minion card
-    local indicatorX = x + TILE_SIZE/2
-    local indicatorY = y + 9  -- Slightly higher than weapon icon
-    local indicatorRadius = 8  -- Smaller than stat circles
-    
-    -- Draw indicator circle
-    love.graphics.setColor(0.2, 0.6, 0.8, 1) -- Cyan-blue for Glancing Blows
-    love.graphics.circle("fill", indicatorX, indicatorY, indicatorRadius)
-    
-    love.graphics.setColor(0.1, 0.4, 0.6, 1) -- Darker border
-    love.graphics.setLineWidth(1)
-    love.graphics.circle("line", indicatorX, indicatorY, indicatorRadius)
-    
-    -- Draw "G" for Glancing Blows
-    love.graphics.setFont(boardFonts.cardType)
-    love.graphics.setColor(1, 1, 1, 1)
-    local text = "G"
-    local textWidth = boardFonts.cardType:getWidth(text)
-    local textHeight = boardFonts.cardType:getHeight()
-    love.graphics.print(text, indicatorX - textWidth/2, indicatorY - textHeight/2)
-    
-    -- Pulsing glow animation
-    local pulse = (math.sin(love.timer.getTime() * 3) + 1) / 2 * 0.5 + 0.5 -- Value between 0.5 and 1
-    love.graphics.setColor(0.2, 0.6, 0.8, 0.3 * pulse)
-    love.graphics.circle("fill", indicatorX, indicatorY, indicatorRadius + 3)
-end
-
---------------------------------------------------
--- drawMinion: Renders a minion in its grid cell
---------------------------------------------------
-local function drawMinion(minion, cellX, cellY, currentPlayer, selectedMinion)
-    if not boardFonts then
-        boardFonts = Theme.fonts
-    end
-
-    local x = boardX + (cellX - 1) * TILE_SIZE
-    local y = boardY + (cellY - 1) * TILE_SIZE
-
-    -- Outer border color depends on owner
-    love.graphics.setColor(
-        minion.owner.name == "Player 1"
-            and Theme.colors.cardBorderP1
-            or Theme.colors.cardBorderP2
-    )
-    love.graphics.rectangle("fill", x, y, TILE_SIZE, TILE_SIZE, CARD_CORNER_RADIUS)
-
-    -- Card-like background
-    love.graphics.setColor(Theme.colors.cardBackground)
-    love.graphics.rectangle("fill", x + 3, y + 3, TILE_SIZE - 6, TILE_SIZE - 6, CARD_CORNER_RADIUS - 2)
-
-    -- Inner rectangle for name area
-    love.graphics.setColor(Theme.colors.buttonBase)
-    love.graphics.rectangle("fill", x + 7, y + 28, TILE_SIZE - 14, TILE_SIZE - 42)
-
-    -- Minion name
-    love.graphics.setFont(boardFonts.cardName)
-    love.graphics.setColor(Theme.colors.textPrimary)
-    love.graphics.printf(minion.name, x + 10, y + 16, TILE_SIZE - 20, "center")
-
-    -- Archetype label at bottom - only if no weapon
-    if not minion.weapon then
-        love.graphics.setColor(Theme.colors.buttonBase)
-        love.graphics.rectangle("fill", x + 3, y + TILE_SIZE - 16, TILE_SIZE - 6, 13, 3)
-        love.graphics.setColor(Theme.colors.textPrimary)
-        love.graphics.setFont(boardFonts.cardType)
-        love.graphics.printf(minion.archetype, x + 3, y + TILE_SIZE - 15, TILE_SIZE - 6, "center")
-    end
-
-    -- Stat circles
-    drawStatCircle(
-        x + TILE_SIZE - PAD_X,
-        y + PAD_Y,
-        minion.movement,
-        Theme.colors.movementCircle,
-        Theme.colors.movementBg
-    )
-    drawStatCircle(
-        x + PAD_X,
-        y + TILE_SIZE - PAD_Y,
-        minion.attack,
-        Theme.colors.attackCircle,
-        Theme.colors.attackBg
-    )
-    drawStatCircle(
-        x + TILE_SIZE - PAD_X,
-        y + TILE_SIZE - PAD_Y,
-        minion.currentHealth,
-        Theme.colors.healthCircle,
-        Theme.colors.healthBg
-    )
-
-    -- Draw weapon icon if the minion has one
-    if minion.weapon then
-        drawWeaponIcon(x, y, minion)
-    end
-    
-    -- Draw Glancing Blows indicator if the minion has it
-    if minion.glancingBlows then
-        drawGlancingBlowsIndicator(x, y, minion)
-    end
-
-    -- Outline logic
-    if minion.owner == currentPlayer then
-        if (not minion.hasMoved) and (not minion.summoningSickness) and minion.canAttack then
-            love.graphics.setColor(Theme.colors.accentBlue)
-            love.graphics.setLineWidth(3)
-            love.graphics.rectangle("line", x, y, TILE_SIZE, TILE_SIZE, CARD_CORNER_RADIUS)
-            love.graphics.setLineWidth(1)
-        elseif minion.canAttack then
-            love.graphics.setColor(Theme.colors.accentGreen)
-            love.graphics.setLineWidth(3)
-            love.graphics.rectangle("line", x, y, TILE_SIZE, TILE_SIZE, CARD_CORNER_RADIUS)
-            love.graphics.setLineWidth(1)
-        end
-    end
-
-    -- If selectedMinion can attack this minion, overlay the "attack range" pattern
-    if selectedMinion
-       and selectedMinion.owner == currentPlayer
-       and selectedMinion.canAttack
-       and minion.owner ~= currentPlayer
-       and isInAttackRange(selectedMinion, minion)
-    then
-        love.graphics.setBlendMode("alpha", "alphamultiply")
-        love.graphics.setColor(1, 1, 1, 0.7)
-        local patternW, patternH = attackPattern:getDimensions()
-        local scaleX = TILE_SIZE / patternW
-        local scaleY = TILE_SIZE / patternH
-        love.graphics.draw(attackPattern, x, y, 0, scaleX, scaleY)
-        love.graphics.setBlendMode("alpha")
+function InputHandler:convertScreenToWorldCoords(x, y)
+    if self.gameplayScene.camera then
+        return self.gameplayScene.camera:worldCoords(x, y)
+    else
+        return x, y -- fallback if no camera
     end
 end
 
 --------------------------------------------------
--- drawTower: Renders a single tower object
+-- convertWorldToScreenCoords: Convert world coordinates to screen coordinates
 --------------------------------------------------
-local function drawTower(tower, currentPlayer)
-    local x = boardX + (tower.position.x - 1) * TILE_SIZE
-    local y = boardY + (tower.position.y - 1) * TILE_SIZE
-
-    love.graphics.setColor(1, 1, 1, 1)
-    local scale = TILE_SIZE / tower.image:getWidth()
-    love.graphics.draw(tower.image, x, y, 0, scale, scale)
-
-    if not boardFonts then
-        boardFonts = Theme.fonts
+function InputHandler:convertWorldToScreenCoords(x, y)
+    if self.gameplayScene.camera then
+        return self.gameplayScene.camera:cameraCoords(x, y)
+    else
+        return x, y -- fallback if no camera
     end
-    love.graphics.setFont(boardFonts.cardName)
-    love.graphics.setColor(Theme.colors.textPrimary)
-    love.graphics.printf(
-        tostring(tower.hp),
-        x,
-        y + (TILE_SIZE - boardFonts.cardName:getHeight()) / 2,
-        TILE_SIZE,
-        "center"
-    )
 end
 
 --------------------------------------------------
--- drawMoveRange: Highlights valid movement tiles
--- for selectedMinion
+-- isBoardPointInScreenRect: Check if a board point is within a screen rectangle
 --------------------------------------------------
-local function drawMoveRange(board, selectedMinion, gameManager)
-    if not selectedMinion
-       or selectedMinion.summoningSickness
-       or selectedMinion.hasMoved
-       or (not selectedMinion.position)
-    then
+function InputHandler:isBoardPointInScreenRect(worldX, worldY, screenRX, screenRY, rw, rh)
+    local screenX, screenY = self:convertWorldToScreenCoords(worldX, worldY)
+    return isPointInRect(screenX, screenY, screenRX, screenRY, rw, rh)
+end
+
+--------------------------------------------------
+-- handleMousePressed: Process mouse input
+-- Now accepts world coordinates
+--------------------------------------------------
+function InputHandler:handleMousePressed(wx, wy, button, istouch, presses)
+    local gameplay = self.gameplayScene
+    local gm = gameplay.gameManager
+    local currentPlayer = gm:getCurrentPlayer()
+    
+    -- Get the original screen coordinates
+    local x, y = love.mouse.getPosition()
+
+    -- End Turn button check (using screen coordinates)
+    local buttonX = love.graphics.getWidth() - END_TURN_BUTTON.width - 20
+    local buttonY = love.graphics.getHeight() / 2 - END_TURN_BUTTON.height / 2
+    if isPointInRect(x, y, buttonX, buttonY, END_TURN_BUTTON.width, END_TURN_BUTTON.height) then
+        gameplay:endTurn()
+        gameplay.selectedMinion = nil
+        gameplay.pendingSummon = nil
         return
-    end
+    }
 
-    local sx = selectedMinion.position.x
-    local sy = selectedMinion.position.y
-    local moveRange = selectedMinion.movement or 1
+    -- Possibly clicking on a card in hand (using screen coordinates)
+    local hand = currentPlayer.hand
+    local cardWidth, cardHeight = CardRenderer.getCardDimensions()
+    local totalWidth = #hand * (cardWidth + 10)
+    local startX = (love.graphics.getWidth() - totalWidth) / 2
+    local cardY = love.graphics.getHeight() - cardHeight - 20
 
-    for row = 1, board.rows do
-        for col = 1, board.cols do
-            local dist = math.max(math.abs(col - sx), math.abs(row - sy))
-            if dist <= moveRange
-               and board:isEmpty(col, row)
-               and (not gameManager:isTileOccupiedByTower(col, row))
-            then
-                local tileX = boardX + (col - 1) * TILE_SIZE
-                local tileY = boardY + (row - 1) * TILE_SIZE
-                love.graphics.setColor(Theme.colors.accentBlue)
-                love.graphics.setLineWidth(3)
-                love.graphics.rectangle("line", tileX, tileY, TILE_SIZE, TILE_SIZE)
-                love.graphics.setLineWidth(1)
+    for i, card in ipairs(hand) do
+        local cardX = startX + (i - 1) * (cardWidth + 10)
+        if isPointInRect(x, y, cardX, cardY, cardWidth, cardHeight) then
+            if card.cost > currentPlayer.manaCrystals then
+                print("Not enough mana to play " .. card.name)
+                
+                -- Trigger feedback animation
+                flux.to({x = cardX, y = cardY}, 0.1, {x = cardX - 5, y = cardY})
+                    :after({x = cardX - 5, y = cardY}, 0.1, {x = cardX + 5, y = cardY})
+                    :after({x = cardX + 5, y = cardY}, 0.1, {x = cardX, y = cardY})
+                
+                -- Publish not enough mana event
+                EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "NotEnoughMana", card)
+                return
+            end
+            
+            -- Handle card play based on type
+            if card.cardType == "Weapon" then
+                -- Defer to targeting system
+                gameplay.targetingSystem:beginTargeting(card.effectKey, card, i)
+                return
+                
+            elseif card.cardType == "Spell" and card.effectKey and require("game.managers.effectmanager").requiresTarget(card.effectKey) then
+                -- Defer to targeting system
+                gameplay.targetingSystem:beginTargeting(card.effectKey, card, i)
+                return
+                
+            elseif card.cardType == "Minion" then
+                -- If it's a minion, set pendingSummon
+                gameplay.pendingSummon = { card = card, cardIndex = i, player = currentPlayer }
+                
+                -- Remove from hand and mark as dragged for drag-and-drop
+                self.draggedCard = card
+                self.draggedCardIndex = i
+                card.dragging = true
+                
+                -- Set up card transform properties with physics
+                card.transform = { 
+                    x = cardX, 
+                    y = cardY, 
+                    width = cardWidth, 
+                    height = cardHeight 
+                }
+                card.target_transform = { x = cardX, y = cardY }
+                card.velocity = { x = 0, y = 0 }
+                card.rotation = 0  -- Add rotation property
+                
+                -- Play a card pickup sound effect
+                -- This is using the existing click sound for now, but could be custom
+                EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "CardPickedUp", card)
+                
+                -- Apply a "pop up" animation when card is selected
+                flux.to(card.transform, 0.2, { 
+                    y = cardY - 20  -- Lift the card slightly
+                }):ease("backout")  -- Use a bounce effect
+                
+                table.remove(hand, i)
+                return
+                
+            else
+                -- For non-targeting cards
+                local success = gm:playCardFromHand(currentPlayer, i)
+                
+                if success then
+                    -- Play card effect animation
+                    flux.to({scale = 1}, 0.3, {scale = 1.2})
+                        :after({scale = 1.2}, 0.1, {scale = 0})
+                        :oncomplete(function()
+                            -- This would be where we'd show the card effect visually
+                        end)
+                end
+                return
             end
         end
     end
+    
+    -- Board click handling - use the world coordinates (wx, wy) here
+    local boardX, boardY = BoardRenderer.getBoardPosition()
+    local boardWidth = TILE_SIZE * gm.board.cols
+    local boardHeight = TILE_SIZE * gm.board.rows
+    
+    -- Check if click is on the board by comparing world coordinates
+    local isOnBoard = wx >= boardX and wx < boardX + boardWidth and
+                     wy >= boardY and wy < boardY + boardHeight
+                     
+    if isOnBoard then
+        self:handleBoardClick(wx, wy, boardX, boardY)
+    else
+        -- Clicked outside the board
+        self:handleOutsideBoardClick()
+    end
 end
 
 --------------------------------------------------
--- drawSummonOverlay: Highlights valid spawn cells
--- if there is a pendingSummon
+-- handleBoardClick: Process clicks on the game board
+-- Now using world coordinates
 --------------------------------------------------
-local function drawSummonOverlay(board, pendingSummon, gameManager)
-    if not pendingSummon then
+function InputHandler:handleBoardClick(wx, wy, boardX, boardY)
+    local gameplay = self.gameplayScene
+    local gm = gameplay.gameManager
+    local currentPlayer = gm:getCurrentPlayer()
+    
+    local cellX = math.floor((wx - boardX) / TILE_SIZE) + 1
+    local cellY = math.floor((wy - boardY) / TILE_SIZE) + 1
+
+    -- Check for a tower on this tile
+    local towerOnTile = gm:isTileOccupiedByTower(cellX, cellY)
+
+    -- If a card is being dragged (for minion placement)
+    if self.draggedCard then
+        if self.draggedCard.cardType == "Minion" then
+            local validSpawnRow = (currentPlayer == gm.player1) and gm.board.rows or 1
+            
+            if cellY == validSpawnRow and (towerOnTile == nil) and gm.board:isEmpty(cellX, cellY) then
+                -- SIMPLIFIED APPROACH: First place the minion, then clear drag state, then animate
+                local card = self.draggedCard
+                local cardIndex = self.draggedCardIndex
+                
+                -- First clear the dragged card references - fixes stuck card issue
+                local draggedCard = self.draggedCard
+                self.draggedCard = nil
+                gameplay.pendingSummon = nil
+                
+                -- Place the minion immediately - game state change is immediate
+                local success = gm:summonMinion(currentPlayer, draggedCard, cardIndex, cellX, cellY)
+                
+                -- Publish event after successful placement
+                if success then
+                    EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "CardSummoned", cellX, cellY)
+                else
+                    -- If placement fails, return card to hand
+                    table.insert(currentPlayer.hand, cardIndex, draggedCard)
+                    EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "CardReturnedToHand", draggedCard)
+                end
+                
+                return
+            else
+                -- Invalid placement - return the card to the hand
+                local card = self.draggedCard
+                local cardIndex = self.draggedCardIndex
+                
+                -- Clear drag state immediately to avoid stuck cards
+                self.draggedCard = nil
+                gameplay.pendingSummon = nil
+                
+                -- Return card to hand
+                table.insert(currentPlayer.hand, cardIndex, card)
+                
+                -- Visual feedback for invalid placement
+                EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "InvalidPlacement", cellX, cellY)
+                
+                print("Invalid spawn position for minion.")
+                return
+            end
+        else
+            -- Non-minion drag-drop is not implemented
+            print("Cannot drop this card on the board. Try clicking the card from your hand.")
+            return
+        end
+    end
+
+    -- If no card is being dragged, check for minion selection/movement/attack
+    if not gameplay.selectedMinion then
+        -- Try selecting your own minion
+        local clickedMinion = gm.board:getMinionAt(cellX, cellY)
+        if clickedMinion and clickedMinion.owner == currentPlayer then
+            if clickedMinion.canAttack then
+                gameplay.selectedMinion = clickedMinion
+                
+                -- Publish minion selected event
+                EventBus.publish(EventBus.Events.MINION_SELECTED, clickedMinion)
+                
+                -- Apply selection animation
+                -- This could be a pulsing highlight or other visual effect
+                flux.to({scale = 1}, 0.2, {scale = 1.2})
+                   :after({scale = 1.2}, 0.2, {scale = 1})
+            else
+                print("This minion has already attacked this turn.")
+                
+                -- Show visual feedback
+                flux.to({x = clickedMinion.position.x, y = clickedMinion.position.y}, 0.1, 
+                       {x = clickedMinion.position.x - 0.1, y = clickedMinion.position.y})
+                   :after({x = clickedMinion.position.x - 0.1, y = clickedMinion.position.y}, 0.1, 
+                         {x = clickedMinion.position.x + 0.1, y = clickedMinion.position.y})
+                   :after({x = clickedMinion.position.x + 0.1, y = clickedMinion.position.y}, 0.1, 
+                         {x = clickedMinion.position.x, y = clickedMinion.position.y})
+            end
+        end
+    else
+        -- We have a minion selected
+        self:handleSelectedMinionAction(cellX, cellY, towerOnTile)
+    end
+end
+
+--------------------------------------------------
+-- handleSelectedMinionAction: Process actions with a selected minion
+--------------------------------------------------
+function InputHandler:handleSelectedMinionAction(cellX, cellY, towerOnTile)
+    local gameplay = self.gameplayScene
+    local gm = gameplay.gameManager
+    local selected = gameplay.selectedMinion
+    
+    if selected.summoningSickness then
+        print("Minion cannot act on the turn it was played.")
+        
+        -- Show visual feedback with flux
+        flux.to({alpha = 1}, 0.2, {alpha = 0.5})
+           :after({alpha = 0.5}, 0.2, {alpha = 1})
+           
+        gameplay.selectedMinion = nil
+        
+        -- Publish minion deselected event
+        EventBus.publish(EventBus.Events.MINION_DESELECTED, selected)
+        return
+    end
+    
+    if not selected.canAttack then
+        print("This minion has already attacked this turn.")
+        gameplay.selectedMinion = nil
+        
+        -- Publish minion deselected event
+        EventBus.publish(EventBus.Events.MINION_DESELECTED, selected)
         return
     end
 
-    local spawnRow
-    if pendingSummon.player == gameManager.player1 then
-        spawnRow = board.rows
+    local dx = math.abs(cellX - selected.position.x)
+    local dy = math.abs(cellY - selected.position.y)
+    local distance = math.max(dx, dy)
+
+    -- Attack tower?
+    if towerOnTile then
+        -- Attack the tower
+        if selected.canAttack then
+            gameplay:resolveAttack({type = "minion", minion = selected}, {type = "tower", tower = towerOnTile})
+        else
+            print("This minion cannot attack right now.")
+        end
+        gameplay.selectedMinion = nil
+        
+        -- Publish minion deselected event
+        EventBus.publish(EventBus.Events.MINION_DESELECTED, selected)
+        return
+    end
+
+    -- Attack or move to a minion tile?
+    local clickedMinion = gm.board:getMinionAt(cellX, cellY)
+    if not clickedMinion then
+        -- Move attempt
+        if (not selected.hasMoved) and (distance <= selected.movement) and gm.board:isEmpty(cellX, cellY) then
+            local moved = gm.board:moveMinion(selected.position.x, selected.position.y, cellX, cellY)
+            if moved then
+                selected.hasMoved = true
+                
+                -- Publish minion moved event with more details
+                local oldPos = {x = selected.position.x, y = selected.position.y}
+                local newPos = {x = cellX, y = cellY}
+                EventBus.publish(EventBus.Events.MINION_MOVED, selected, oldPos, newPos)
+            end
+            gameplay.selectedMinion = nil
+            
+            -- Publish minion deselected event
+            EventBus.publish(EventBus.Events.MINION_DESELECTED, selected)
+            return
+        else
+            print("Minion has already moved or target cell is out of range.")
+            
+            -- Visual feedback for invalid move
+            flux.to({x = 0}, 0.1, {x = 5})
+               :after({x = 5}, 0.1, {x = -5})
+               :after({x = -5}, 0.1, {x = 0})
+            
+            gameplay.selectedMinion = nil
+            
+            -- Publish minion deselected event
+            EventBus.publish(EventBus.Events.MINION_DESELECTED, selected)
+            return
+        end
     else
-        spawnRow = 1
-    end
-
-    for col = 1, board.cols do
-        if board:isEmpty(col, spawnRow) and (not gameManager:isTileOccupiedByTower(col, spawnRow)) then
-            local cellX = boardX + (col - 1) * TILE_SIZE
-            local cellY = boardY + (spawnRow - 1) * TILE_SIZE
-
-            love.graphics.setBlendMode("alpha", "alphamultiply")
-            love.graphics.setColor(1, 1, 1, 0.4)
-            local patternW, patternH = transparentPattern:getDimensions()
-            local scaleX = TILE_SIZE / patternW
-            local scaleY = TILE_SIZE / patternH
-            love.graphics.draw(transparentPattern, cellX, cellY, 0, scaleX, scaleY)
-
-            love.graphics.setBlendMode("alpha")
+        -- There's a minion here
+        if clickedMinion.owner ~= gm:getCurrentPlayer() then
+            -- Enemy minion => Attack
+            local reach = 1
+            if selected.archetype == "Magic" then
+                reach = 2
+            elseif selected.archetype == "Ranged" then
+                reach = 3
+            end
+            if distance <= reach then
+                gameplay:resolveAttack({type = "minion", minion = selected}, {type = "minion", minion = clickedMinion})
+            else
+                print("Target out of attack range.")
+                
+                -- Visual feedback for out of range
+                flux.to({alpha = 1}, 0.2, {alpha = 0.5})
+                   :after({alpha = 0.5}, 0.2, {alpha = 1})
+            end
+            gameplay.selectedMinion = nil
+            
+            -- Publish minion deselected event
+            EventBus.publish(EventBus.Events.MINION_DESELECTED, selected)
+            return
+        else
+            -- It's a friendly minion: switch selection
+            if clickedMinion.canAttack then
+                -- Deselect previous minion
+                EventBus.publish(EventBus.Events.MINION_DESELECTED, selected)
+                
+                gameplay.selectedMinion = clickedMinion
+                
+                -- Select new minion
+                EventBus.publish(EventBus.Events.MINION_SELECTED, clickedMinion)
+            else
+                print("This minion has already attacked this turn.")
+                gameplay.selectedMinion = nil
+                
+                -- Publish minion deselected event
+                EventBus.publish(EventBus.Events.MINION_DESELECTED, selected)
+            end
+            return
         end
     end
 end
 
 --------------------------------------------------
--- drawBoard: Main rendering function
+-- handleOutsideBoardClick: Process clicks outside the board
 --------------------------------------------------
-function BoardRenderer.drawBoard(
-    board,
-    player1,
-    player2,
-    selectedMinion,
-    currentPlayer,
-    gameManager,
-    pendingSummon
-)
-    if not boardFonts then
-        boardFonts = Theme.fonts
-    end
-
-    local boardWidth = TILE_SIZE * board.cols
-    local boardHeight = TILE_SIZE * board.rows
-    boardX = (love.graphics.getWidth() - boardWidth) / 2
-
-    local mx, my = love.mouse.getPosition()
-    hoveredMinion = nil
-
-    if mx >= boardX and mx < boardX + boardWidth and
-       my >= boardY and my < boardY + boardHeight
-    then
-        local cellX = math.floor((mx - boardX) / TILE_SIZE) + 1
-        local cellY = math.floor((my - boardY) / TILE_SIZE) + 1
-        if cellX >= 1 and cellX <= board.cols and
-           cellY >= 1 and cellY <= board.rows
-        then
-            hoveredMinion = board:getMinionAt(cellX, cellY)
-        end
-    end
-
-    -- Draw the grid
-    for row = 1, board.rows do
-        for col = 1, board.cols do
-            local tileX = boardX + (col - 1) * TILE_SIZE
-            local tileY = boardY + (row - 1) * TILE_SIZE
-            love.graphics.setColor(Theme.colors.gridLine)
-            love.graphics.rectangle("line", tileX, tileY, TILE_SIZE, TILE_SIZE)
-
-            local colLetter = string.char(64 + col)
-            local cellLabel = colLetter .. tostring(row)
-            love.graphics.setFont(boardFonts.cardType)
-            love.graphics.setColor(1, 1, 1, 0.5)
-            local labelWidth = boardFonts.cardType:getWidth(cellLabel)
-            love.graphics.print(cellLabel, tileX + TILE_SIZE - labelWidth - 2, tileY + 2)
-        end
-    end
-
-    -- Show move range
-    drawMoveRange(board, selectedMinion, gameManager)
-
-    -- Draw minions (no separate weapon cards)
-    board:forEachMinion(function(minion, col, row)
-        drawMinion(minion, col, row, currentPlayer, selectedMinion)
-    end)
-
-    -- Draw towers for player1
-    for _, tower in ipairs(player1.towers) do
-        drawTower(tower, currentPlayer)
-    end
-    -- Draw towers for player2
-    for _, tower in ipairs(player2.towers) do
-        drawTower(tower, currentPlayer)
-    end
-
-    -- Bright green outline for the explicitly selected minion
-    if selectedMinion and selectedMinion.position then
-        local sx = boardX + (selectedMinion.position.x - 1) * TILE_SIZE
-        local sy = boardY + (selectedMinion.position.y - 1) * TILE_SIZE
-        love.graphics.setColor(Theme.colors.accentGreen)
-        love.graphics.setLineWidth(3)
-        love.graphics.rectangle("line", sx, sy, TILE_SIZE, TILE_SIZE, CARD_CORNER_RADIUS)
-        love.graphics.setLineWidth(1)
-    end
-
-    -- Show overlay for possible spawn cells if there's a pending Summon
-    drawSummonOverlay(board, pendingSummon, gameManager)
+function InputHandler:handleOutsideBoardClick()
+    local gameplay = self.gameplayScene
+    local currentPlayer = gameplay.gameManager:getCurrentPlayer()
     
-    -- Update and draw the standard minion tooltip
-    -- The Tooltip module will handle displaying weapon info
-    Tooltip.update(love.timer.getDelta(), mx, my, hoveredMinion)
-    Tooltip.draw()
-
-    love.graphics.setColor(1, 1, 1, 1)
+    if self.draggedCard then
+        -- Immediately return the card to hand with no animation to prevent stuck cards
+        local cardIndex = self.draggedCardIndex
+        local card = self.draggedCard
+        
+        -- Clear drag state before inserting to avoid issues
+        self.draggedCard = nil
+        gameplay.pendingSummon = nil
+        
+        -- Return card to hand and publish event
+        table.insert(currentPlayer.hand, cardIndex, card)
+        EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "CardReturnedToHand", card)
+    end
+    
+    if gameplay.selectedMinion then
+        -- Deselect minion with event
+        EventBus.publish(EventBus.Events.MINION_DESELECTED, gameplay.selectedMinion)
+        gameplay.selectedMinion = nil
+    end
 end
 
-function BoardRenderer.getBoardPosition()
-    return boardX, boardY
+--------------------------------------------------
+-- handleMouseReleased: Process mouse button release
+--------------------------------------------------
+function InputHandler:handleMouseReleased(wx, wy)
+    -- Currently no special handling needed for mouse release
+    -- Drag and drop is handled via clicks not drag/release
+}
+
+--------------------------------------------------
+-- cancelDraggedCard: Used to safely cancel dragging
+--------------------------------------------------
+function InputHandler:cancelDraggedCard()
+    if not self.draggedCard then
+        return false
+    end
+    
+    local hand = self.gameplayScene.gameManager:getCurrentPlayer().hand
+    local cardIndex = self.draggedCardIndex
+    local card = self.draggedCard
+    
+    -- Clear drag state
+    self.draggedCard = nil
+    self.gameplayScene.pendingSummon = nil
+    
+    -- Return card to hand
+    table.insert(hand, cardIndex, card)
+    
+    -- Notify system
+    EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "CardDragCancelled", card)
+    
+    return true
 end
 
-function BoardRenderer.getTileSize()
-    return TILE_SIZE
-end
-
-return BoardRenderer
+return InputHandler

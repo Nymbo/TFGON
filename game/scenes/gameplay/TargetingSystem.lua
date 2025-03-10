@@ -1,6 +1,7 @@
 -- game/scenes/gameplay/TargetingSystem.lua
 -- Handles targeting system for spells and weapons
 -- Manages target selection, validation, and visual feedback
+-- Updated to work with camera system
 
 local BoardRenderer = require("game.ui.boardrenderer")
 local Theme = require("game.ui.theme")
@@ -202,10 +203,17 @@ end
 
 --------------------------------------------------
 -- drawTargetingIndicators: Visual feedback for targeting
+-- Updated to work with camera
 --------------------------------------------------
 function TargetingSystem:drawTargetingIndicators()
     local boardX, boardY = BoardRenderer.getBoardPosition()
     local TILE_SIZE = BoardRenderer.getTileSize()
+    local camera = self.gameplayScene.camera
+    
+    -- Set drawing to camera space
+    if camera then
+        camera:attach()
+    end
     
     -- Draw targeting indicator for each valid target
     for _, target in ipairs(self.validTargets) do
@@ -260,6 +268,11 @@ function TargetingSystem:drawTargetingIndicators()
         love.graphics.setLineWidth(1)
     end
     
+    -- End camera transformation
+    if camera then
+        camera:detach()
+    end
+    
     -- Reset color
     love.graphics.setColor(1, 1, 1, 1)
 end
@@ -278,16 +291,17 @@ function TargetingSystem:drawPrompt()
     love.graphics.setFont(Theme.fonts.subtitle)
     love.graphics.setColor(Theme.colors.textPrimary)
     love.graphics.printf(promptMessage, 0, 20, love.graphics.getWidth(), "center")
-end
+}
 
 --------------------------------------------------
 -- selectTarget: Find a target at the given position
+-- Updated to work with camera
 --------------------------------------------------
 function TargetingSystem:selectTarget(x, y)
     local boardX, boardY = BoardRenderer.getBoardPosition()
     local TILE_SIZE = BoardRenderer.getTileSize()
     
-    -- Check if the click is on the board
+    -- Check if the click is in world coordinates
     local isOnBoard = x >= boardX and x < boardX + (self.gameplayScene.gameManager.board.cols * TILE_SIZE) and
                     y >= boardY and y < boardY + (self.gameplayScene.gameManager.board.rows * TILE_SIZE)
     
@@ -308,9 +322,10 @@ end
 
 --------------------------------------------------
 -- handleTargetingClick: Process click during targeting
+-- Updated to work with world coordinates
 --------------------------------------------------
-function TargetingSystem:handleTargetingClick(x, y)
-    local target = self:selectTarget(x, y)
+function TargetingSystem:handleTargetingClick(wx, wy)
+    local target = self:selectTarget(wx, wy)
     if target then
         -- Apply the pending effect with the selected target
         local EffectManager = require("game.managers.effectmanager")
@@ -356,8 +371,8 @@ function TargetingSystem:handleTargetingClick(x, y)
     local boardWidth = TILE_SIZE * self.gameplayScene.gameManager.board.cols
     local boardHeight = TILE_SIZE * self.gameplayScene.gameManager.board.rows
     
-    if (x >= boardX and x < boardX + boardWidth and
-        y >= boardY and y < boardY + boardHeight) or
+    if (wx >= boardX and wx < boardX + boardWidth and
+        wy >= boardY and wy < boardY + boardHeight) or
        require("game.scenes.gameplay.InputHandler").checkEndTurnHover(self.gameplayScene) then
         
         -- Put the card back in hand
