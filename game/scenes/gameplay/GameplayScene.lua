@@ -131,6 +131,7 @@ function GameplayScene:new(changeSceneCallback, selectedDeck, selectedBoard, aiO
     self.showGameOverPopup = false
     self.gameOverWinner = nil
     self.waitingForAnimation = false
+    self.aiTurnInProgress = false  -- Track when an AI turn is being processed
     
     -- Initialize components
     self.stateManager = StateManager:new(self)
@@ -197,10 +198,22 @@ function GameplayScene:update(dt)
                     self.aiTurnTimer = self.aiTurnTimer - dt
                     if self.aiTurnTimer <= 0 then
                         -- Trigger the AI turn via an event
-                        EventBus.publish(EventBus.Events.AI_TURN_STARTED, self.gameManager.player2)
+                        -- Only trigger if we're still on the AI's turn
+                        if self.gameManager.currentPlayer == 2 then
+                            -- Add safety check to prevent multiple AI turn triggers
+                            if not self.aiTurnInProgress then
+                                self.aiTurnInProgress = true
+                                EventBus.publish(EventBus.Events.AI_TURN_STARTED, self.gameManager.player2)
+                            end
+                        end
                     end
                 end
             end
+        end
+        
+        -- Reset AI turn state when turn changes
+        if self.gameManager.currentPlayer == 1 then
+            self.aiTurnInProgress = false
         end
     end)
     

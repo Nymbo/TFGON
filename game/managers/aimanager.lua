@@ -97,7 +97,10 @@ function AIManager:initEventSubscriptions()
     table.insert(self.eventSubscriptions, EventBus.subscribe(
         EventBus.Events.AI_TURN_ENDED,
         function(player)
-            self.gameManager:endTurn()
+            -- Make sure we only end the turn if it's still the AI's turn
+            if self.gameManager.currentPlayer == 2 then
+                self.gameManager:endTurn()
+            end
         end,
         "AITurnEndHandler"
     ))
@@ -143,11 +146,21 @@ end
 -- Main function for the AI's entire turn, now event-based.
 --------------------------------------------------
 function AIManager:executeTurn(player)
+    -- Ensure the player parameter is the AI player
+    if player ~= self.gameManager.player2 then
+        Debug.error("AIManager:executeTurn called with wrong player")
+        EventBus.publishDelayed(EventBus.Events.AI_TURN_ENDED, 0.1, player)
+        return
+    end
+    
     -- Introduce delay between actions for more natural pacing
     EventBus.publishDelayed(EventBus.Events.AI_ACTION_PERFORMED, 0.3, "playCards", player)
     EventBus.publishDelayed(EventBus.Events.AI_ACTION_PERFORMED, 1.0, "moveMinions", player)
     EventBus.publishDelayed(EventBus.Events.AI_ACTION_PERFORMED, 1.8, "attackWithMinions", player)
-    EventBus.publishDelayed(EventBus.Events.AI_TURN_ENDED, 2.5, player)
+    
+    -- Ensure the turn ends even if there was a problem with animations or events
+    -- Use a longer delay to ensure all actions have time to complete
+    EventBus.publishDelayed(EventBus.Events.AI_TURN_ENDED, 3.0, player)
     
     -- Optionally publish event when AI starts thinking for UI feedback
     EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "AIThinking")
