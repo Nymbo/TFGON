@@ -3,6 +3,7 @@
 -- Updated with support for targeting indicators
 -- Now includes animation rendering with safe handling
 -- Enhanced with flux-powered card animations
+-- Card hover effects
 
 local BoardRenderer = require("game.ui.boardrenderer")
 local CardRenderer = require("game.ui.cardrenderer")
@@ -36,12 +37,15 @@ local END_TURN_BUTTON = {
     glowOffset = Theme.dimensions.buttonGlowOffset
 }
 
+local TILE_SIZE = BoardRenderer.getTileSize()
+
 -- This stores the visual state of cards for smooth animations
 local cardVisuals = {
     cards = {},  -- Will store visual state for each card
     lastHandSize = 0,  -- Track changes in hand size
     repositionNeeded = false,  -- Flag to trigger repositioning
-    animationInProgress = false -- Track if any card animation is in progress
+    animationInProgress = false, -- Track if any card animation is in progress
+    hoveredCard = nil -- NEW: Track currently hovered card
 }
 
 local function drawScaledBackground(image, alpha)
@@ -63,7 +67,7 @@ local function initCardVisual(card, index, hand)
     local startX = (love.graphics.getWidth() - totalWidth) / 2
     local cardY = love.graphics.getHeight() - cardHeight - 20
     local targetX = startX + (index - 1) * (cardWidth + 10)
-    
+
     if not cardVisuals.cards[card] then
         -- If card is newly added, start it from offscreen
         cardVisuals.cards[card] = {
@@ -75,9 +79,11 @@ local function initCardVisual(card, index, hand)
             rotation = 0.2,  -- Slight initial rotation
             alpha = 0.8,  -- Start slightly transparent
             isNew = true,
-            removing = false -- Ensure it's initialized as not removing
+            removing = false, -- Ensure it's initialized as not removing
+            hovered = false, -- NEW: Track hover state
+            hoverScale = 1.2,   -- NEW: Scale when hovered
         }
-        
+
         -- Animate it into position
         cardVisuals.animationInProgress = true
         flux.to(cardVisuals.cards[card], 0.5, {
@@ -95,10 +101,10 @@ local function initCardVisual(card, index, hand)
         -- Update the target position for existing card
         cardVisuals.cards[card].targetX = targetX
         cardVisuals.cards[card].targetY = cardY
-        
+
         -- Ensure the removing flag is reset if the card is back in hand
         cardVisuals.cards[card].removing = false
-        
+
         -- Animate to new position if it's significantly different
         if math.abs(cardVisuals.cards[card].x - targetX) > 5 then
             cardVisuals.animationInProgress = true
@@ -120,7 +126,7 @@ local function cleanupCardVisuals(hand)
     for _, card in ipairs(hand) do
         cardsInHand[card] = true
     end
-    
+
     -- Check each visual and mark those no longer in hand for removal
     local hasRemoving = false
     for card, visual in pairs(cardVisuals.cards) do
@@ -128,7 +134,7 @@ local function cleanupCardVisuals(hand)
             -- Card is no longer in hand, animate it away
             visual.removing = true
             hasRemoving = true
-            
+
             -- Animate the card moving up and fading out
             cardVisuals.animationInProgress = true
             flux.to(visual, 0.3, {
@@ -139,10 +145,11 @@ local function cleanupCardVisuals(hand)
             :oncomplete(function()
                 cardVisuals.cards[card] = nil
                 cardVisuals.animationInProgress = false
+                cardVisuals.repositionNeeded = true
             end)
         end
     end
-    
+
     -- Only trigger repositioning if we've actually removed cards and
     -- no animations are in progress
     if hasRemoving and not cardVisuals.animationInProgress then
@@ -171,13 +178,13 @@ function DrawSystem.drawGameplayScene(gameplay)
     local currentPlayer = gm:getCurrentPlayer()
     local hand = currentPlayer.hand
     local cardWidth, cardHeight = CardRenderer.getCardDimensions()
-    
+
     -- Check if hand size has changed
     if #hand ~= cardVisuals.lastHandSize then
         cardVisuals.repositionNeeded = true
         cardVisuals.lastHandSize = #hand
     end
-    
+
     -- Initialize or update card visuals if needed
     if cardVisuals.repositionNeeded and not cardVisuals.animationInProgress then
         -- Recalculate positions for all cards
@@ -187,51 +194,83 @@ function DrawSystem.drawGameplayScene(gameplay)
         cleanupCardVisuals(hand)
         cardVisuals.repositionNeeded = false
     end
-    
+
+    -- Check for hovered card
+    local mx, my = love.mouse.getPosition()
+    local oldHoveredCard = cardVisuals.hoveredCard
+    cardVisuals.hoveredCard = nil  -- Reset at the start of each frame
+
+     -- NEW: Iterate backwards to prioritize cards drawn later (on top)
+    for i = #hand, 1, -1 do  -- Iterate in reverse
+        local card = hand[i]
+        if cardVisuals.cards[card] then
+            local visual = cardVisuals.cards[card]
+            if mx >= visual.x and mx <= visual.x + cardWidth * visual.scale and
+               my >= visual.y and my <= visual.y + cardHeight * visual.scale then
+                cardVisuals.hoveredCard = card
+                break  -- Stop checking once we find a hovered card (highest in z-order)
+            end
+        end
+    end
+
+    -- Handle hover state changes
+    if cardVisuals.hoveredCard ~= oldHoveredCard then
+        if oldHoveredCard and cardVisuals.cards[oldHoveredCard] then
+            -- Animate scale back to normal
+            flux.to(cardVisuals.cards[oldHoveredCard], 0.2, { scale = 1 }):ease("backout")
+            cardVisuals.cards[oldHoveredCard].hovered = false
+        end
+        if cardVisuals.hoveredCard and cardVisuals.cards[cardVisuals.hoveredCard] then
+            -- Animate scale to hoverScale
+             flux.to(cardVisuals.cards[cardVisuals.hoveredCard], 0.2, { scale = cardVisuals.cards[cardVisuals.hoveredCard].hoverScale }):ease("backout")
+            cardVisuals.cards[cardVisuals.hoveredCard].hovered = true
+        end
+    end
+
     -- Draw cards with their current visual state
     for i, card in ipairs(hand) do
         if cardVisuals.cards[card] then
             local visual = cardVisuals.cards[card]
-            
+
             -- Skip drawing cards being removed and fully transparent
             if visual.removing and visual.alpha <= 0 then
                 goto continue
             end
-            
+
             -- Save current graphics state
             love.graphics.push()
-            
+
             -- Apply visual transformations
             love.graphics.translate(
-                visual.x + cardWidth/2, 
+                visual.x + cardWidth/2,
                 visual.y + cardHeight/2
             )
             love.graphics.scale(visual.scale, visual.scale)
             love.graphics.rotate(visual.rotation)
-            
+
             -- Apply alpha
             love.graphics.setColor(1, 1, 1, visual.alpha)
-            
+
             local isPlayable = (card.cost <= currentPlayer.manaCrystals)
             CardRenderer.drawCard(card, -cardWidth/2, -cardHeight/2, isPlayable)
-            
+
             -- Restore previous graphics state
             love.graphics.pop()
             love.graphics.setColor(1, 1, 1, 1)
         else
             -- Fallback for cards without visuals - create them now
             initCardVisual(card, i, hand)
-            
+
             -- Draw a placeholder until the visual is ready
             local totalWidth = #hand * (cardWidth + 10)
             local startX = (love.graphics.getWidth() - totalWidth) / 2
             local cardY = love.graphics.getHeight() - cardHeight - 20
             local cardX = startX + (i - 1) * (cardWidth + 10)
-            
+
             local isPlayable = (card.cost <= currentPlayer.manaCrystals)
             CardRenderer.drawCard(card, cardX, cardY, isPlayable)
         end
-        
+
         ::continue::
     end
 
@@ -248,7 +287,7 @@ function DrawSystem.drawGameplayScene(gameplay)
 
     love.graphics.setColor(END_TURN_BUTTON.colors.buttonShadow)
     love.graphics.rectangle(
-        "fill", 
+        "fill",
         buttonX + END_TURN_BUTTON.shadowOffset,
         buttonY + END_TURN_BUTTON.shadowOffset,
         END_TURN_BUTTON.width,
@@ -322,7 +361,7 @@ function DrawSystem.drawGameplayScene(gameplay)
         local success, result = pcall(function()
             return love.graphics.newImage("assets/images/FrameRound.png")
         end)
-        
+
         if success then
             DrawSystem.manaFrame = result
             DrawSystem.manaFrameScale = 0.16  -- Scale so that the 512x512 image becomes roughly 80x80
@@ -338,7 +377,7 @@ function DrawSystem.drawGameplayScene(gameplay)
             DrawSystem.manaFrameScale = 1
         end
     end
-    
+
     local manaFrame = DrawSystem.manaFrame
     local manaScale = DrawSystem.manaFrameScale
     local frameWidth = manaFrame:getWidth() * manaScale
@@ -350,20 +389,20 @@ function DrawSystem.drawGameplayScene(gameplay)
     local p2Y = 20       -- near the top
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.draw(manaFrame, p2X, p2Y, 0, manaScale, manaScale)
-    
+
     -- Load mana font safely
     local manaFont
     local success, result = pcall(function()
         return love.graphics.newFont("assets/fonts/InknutAntiqua-Regular.ttf", 24)
     end)
-    
+
     if success then
         manaFont = result
     else
         ErrorLog.logError("Failed to load mana font: " .. tostring(result))
         manaFont = love.graphics.getFont() -- Fallback to current font
     end
-    
+
     love.graphics.setFont(manaFont)
     love.graphics.setColor(Theme.colors.textPrimary)
     love.graphics.printf(p2ManaText, p2X, p2Y + (frameHeight - manaFont:getHeight())/2, frameWidth, "center")
@@ -382,7 +421,7 @@ function DrawSystem.drawGameplayScene(gameplay)
         local miniScale = 0.7
         local miniCardWidth = cardWidth * miniScale
         local miniCardHeight = cardHeight * miniScale
-        
+
         love.graphics.setColor(1, 1, 1, 0.7)  -- Semi-transparent
         love.graphics.push()
         love.graphics.translate(mx - miniCardWidth/2, my - miniCardHeight - 20)
@@ -397,7 +436,7 @@ end
 -- Call this when a card is drawn by the player to trigger animations
 function DrawSystem.onCardDrawn(card, index, hand)
     cardVisuals.repositionNeeded = true
-    
+
     -- This ensures the new card gets proper animation
     if not cardVisuals.cards[card] then
         -- Initialize the card with offscreen starting position
@@ -409,10 +448,10 @@ end
 function DrawSystem.onCardPlayed(card)
     if cardVisuals.cards[card] then
         local visual = cardVisuals.cards[card]
-        
+
         -- Mark as removing to prevent cleanup from deleting it prematurely
         visual.removing = true
-        
+
         -- Animate the card moving up and fading out
         cardVisuals.animationInProgress = true
         flux.to(visual, 0.3, {
@@ -427,7 +466,7 @@ function DrawSystem.onCardPlayed(card)
             cardVisuals.repositionNeeded = true
         end)
     end
-    
+
     cardVisuals.repositionNeeded = true
 end
 
