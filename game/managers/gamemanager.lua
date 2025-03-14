@@ -8,6 +8,7 @@
 --   * Integrated with EventBus for better decoupling
 --   * Added proper handling of Glancing Blows property
 --   * UPDATED: Removed legacy callbacks in favor of event bus
+--   * REFACTORED: Fully event-based tower interaction
 
 local Player = require("game.core.player")
 local Board = require("game.core.board")
@@ -67,23 +68,11 @@ function GameManager:new(selectedDeck, selectedBoard, isAIOpponent)
             if type(selectedBoard.towerPositions.player1) == "table" and selectedBoard.towerPositions.player1[1] then
                 -- It's an array of tower positions
                 for _, tPos in ipairs(selectedBoard.towerPositions.player1) do
-                    local twr = Tower:new({
-                        owner = self.player1,
-                        position = tPos,
-                        hp = 30,
-                        imagePath = "assets/images/blue_tower.png"
-                    })
-                    table.insert(self.player1.towers, twr)
+                    self:createTower(self.player1, tPos)
                 end
             else
                 -- It's a single tower position
-                local twr = Tower:new({
-                    owner = self.player1,
-                    position = selectedBoard.towerPositions.player1,
-                    hp = 30,
-                    imagePath = "assets/images/blue_tower.png"
-                })
-                table.insert(self.player1.towers, twr)
+                self:createTower(self.player1, selectedBoard.towerPositions.player1)
             end
         end
 
@@ -92,23 +81,11 @@ function GameManager:new(selectedDeck, selectedBoard, isAIOpponent)
             if type(selectedBoard.towerPositions.player2) == "table" and selectedBoard.towerPositions.player2[1] then
                 -- It's an array of tower positions
                 for _, tPos in ipairs(selectedBoard.towerPositions.player2) do
-                    local twr = Tower:new({
-                        owner = self.player2,
-                        position = tPos,
-                        hp = 30,
-                        imagePath = "assets/images/red_tower.png"
-                    })
-                    table.insert(self.player2.towers, twr)
+                    self:createTower(self.player2, tPos)
                 end
             else
                 -- It's a single tower position
-                local twr = Tower:new({
-                    owner = self.player2,
-                    position = selectedBoard.towerPositions.player2,
-                    hp = 30,
-                    imagePath = "assets/images/red_tower.png"
-                })
-                table.insert(self.player2.towers, twr)
+                self:createTower(self.player2, selectedBoard.towerPositions.player2)
             end
         end
     end
@@ -129,6 +106,27 @@ function GameManager:new(selectedDeck, selectedBoard, isAIOpponent)
 end
 
 --------------------------------------------------
+-- createTower: Helper method to create towers and publish events
+--------------------------------------------------
+function GameManager:createTower(owner, position)
+    local imagePath = (owner == self.player1) and "assets/images/blue_tower.png" or "assets/images/red_tower.png"
+    
+    local tower = Tower:new({
+        owner = owner,
+        position = position,
+        hp = 30,
+        imagePath = imagePath
+    })
+    
+    table.insert(owner.towers, tower)
+    
+    -- Publish tower created event
+    EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "TowerCreated", owner, tower)
+    
+    return tower
+end
+
+--------------------------------------------------
 -- initEventSubscriptions():
 -- Set up event listeners for game-related events
 --------------------------------------------------
@@ -139,14 +137,28 @@ function GameManager:initEventSubscriptions()
     end
     self.eventSubscriptions = {}
     
+    -- Subscribe to tower damaged events to update health and check for destruction
+    table.insert(self.eventSubscriptions, EventBus.subscribe(
+        EventBus.Events.TOWER_DAMAGED,
+        function(tower, attacker, damage, oldHealth, newHealth)
+            -- CRITICAL: Actually update the tower's HP!
+            tower.hp = newHealth
+            
+            -- Check if tower health is now at or below zero
+            if newHealth <= 0 then
+                self:handleTowerDestruction(tower, attacker)
+            end
+        end,
+        "GameManager-TowerDamageHandler"
+    ))
+    
     -- Subscribe to tower destroyed events to check game end condition
     table.insert(self.eventSubscriptions, EventBus.subscribe(
         EventBus.Events.TOWER_DESTROYED,
         function(tower, destroyer)
-            -- Check if this destroys all of a player's towers
-            -- We'll let the update() method handle actual game end
+            self:checkGameEndCondition()
         end,
-        "GameManager-TowerHandler"
+        "GameManager-TowerDestroyedHandler"
     ))
     
     -- Subscribe to battlecry triggered events
@@ -178,37 +190,43 @@ function GameManager:initEventSubscriptions()
 end
 
 --------------------------------------------------
+-- handleTowerDestruction: Remove tower and publish event
+--------------------------------------------------
+function GameManager:handleTowerDestruction(tower, destroyer)
+    local owner = tower.owner
+    
+    -- Find and remove the tower from the owner's list
+    for i = #owner.towers, 1, -1 do
+        if owner.towers[i] == tower then
+            -- Publish tower destroyed event before removing
+            EventBus.publish(EventBus.Events.TOWER_DESTROYED, tower, destroyer)
+            
+            -- Remove the tower
+            table.remove(owner.towers, i)
+            break
+        end
+    end
+end
+
+--------------------------------------------------
+-- checkGameEndCondition: Check if the game should end
+--------------------------------------------------
+function GameManager:checkGameEndCondition()
+    -- If either player has no towers left, game ends
+    if #self.player1.towers == 0 or #self.player2.towers == 0 then
+        self:endGame()
+    end
+end
+
+--------------------------------------------------
 -- update(dt):
--- Continuously checks the win condition.
--- Removes towers that have 0 or less HP.
--- The game ends if a player has no remaining towers.
+-- No longer directly manipulates tower state - now handled by events
 --------------------------------------------------
 function GameManager:update(dt)
+    -- The tower health and destruction checks are now handled by event handlers
+    -- This method is kept for compatibility and future use if needed
     if not self.gameOver then
-        -- Check all towers for player1
-        for i = #self.player1.towers, 1, -1 do
-            local t = self.player1.towers[i]
-            if t.hp <= 0 then
-                -- Publish tower destroyed event before removing
-                EventBus.publish(EventBus.Events.TOWER_DESTROYED, t, nil)
-                table.remove(self.player1.towers, i)
-            end
-        end
-
-        -- Check all towers for player2
-        for i = #self.player2.towers, 1, -1 do
-            local t = self.player2.towers[i]
-            if t.hp <= 0 then
-                -- Publish tower destroyed event before removing
-                EventBus.publish(EventBus.Events.TOWER_DESTROYED, t, nil)
-                table.remove(self.player2.towers, i)
-            end
-        end
-
-        -- If either player has no towers left, game ends
-        if #self.player1.towers == 0 or #self.player2.towers == 0 then
-            self:endGame()
-        end
+        -- Check game state but don't directly modify towers
     end
 end
 

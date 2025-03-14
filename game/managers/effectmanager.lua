@@ -4,6 +4,7 @@
 -- Now with support for targeted effects and minion weapons!
 -- Refactored to reduce duplicate code in weapon effects
 -- Now integrated with EventBus for decoupled architecture
+-- Fixed Fireball effect to use proper event parameters
 
 local EffectManager = {}
 local EventBus = require("game.eventbus")  -- Import the EventBus
@@ -89,16 +90,28 @@ local effectRegistry = {
                 -- Store old health for event
                 local oldHealth = target.hp
                 
-                -- Deal 6 damage to the selected tower
-                target.hp = target.hp - 6
+                -- Calculate new health
+                local damage = 6  -- Fireball damage
+                local newHealth = oldHealth - damage
                 
-                -- Publish tower damaged event
-                EventBus.publish(EventBus.Events.TOWER_DAMAGED, target, 6, oldHealth, target.hp)
+                -- IMPORTANT: Directly update the tower's health for fallback
+                target.hp = newHealth
+                
+                -- Publish tower damaged event with proper parameters
+                EventBus.publish(EventBus.Events.TOWER_DAMAGED, 
+                    target,      -- The tower being damaged
+                    nil,         -- No attacker (spell damage)
+                    damage,      -- Amount of damage (6)
+                    oldHealth,   -- Health before damage
+                    newHealth    -- Health after damage
+                )
                 
                 print("Fireball dealt 6 damage to a tower!")
                 
                 -- Publish spell cast success event
                 EventBus.publish(EventBus.Events.SPELL_CAST, player, "Fireball", target)
+                
+                return true
             else
                 print("Warning: Fireball effect called without valid target")
                 
@@ -107,7 +120,6 @@ local effectRegistry = {
                 
                 return false
             end
-            return true
         end
     },
 

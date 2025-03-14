@@ -1,6 +1,7 @@
 -- game/scenes/gameplay/GameOverManager.lua
 -- Manages game over conditions and UI
 -- Handles the game over popup and its interactions
+-- Refactored to be fully event-based for tower destruction
 
 local Theme = require("game.ui.theme")
 local EventBus = require("game.eventbus")
@@ -74,10 +75,9 @@ function GameOverManager:checkGameOverCondition()
     
     -- Check if either player has no towers left
     if #gm.player1.towers == 0 or #gm.player2.towers == 0 then
-        local winner = (#gm.player1.towers > 0) and gm.player1 or gm.player2
-        
-        -- Publish game ended event
-        EventBus.publish(EventBus.Events.GAME_ENDED, winner)
+        -- We no longer directly end the game here
+        -- Instead, we publish an event that GameManager will handle
+        EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "GameOverConditionMet")
     end
 end
 
@@ -221,12 +221,20 @@ function GameOverManager:handlePopupClick(x, y)
            y >= area.y and y <= area.y + area.height then
             if btnText == "Restart" then
                 ErrorLog.logError("Restart game requested", true)
+                
+                -- Publish restart requested event
+                EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "RestartRequested")
+                
                 self.gameplayScene.changeSceneCallback("gameplay", 
                     self.gameplayScene.selectedDeck, 
                     self.gameplayScene.selectedBoard, 
                     self.gameplayScene.aiOpponent)
             elseif btnText == "Main Menu" then
                 ErrorLog.logError("Return to main menu requested", true)
+                
+                -- Publish main menu requested event
+                EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "MainMenuRequested")
+                
                 self.gameplayScene.changeSceneCallback("mainmenu")
             end
         end

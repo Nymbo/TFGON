@@ -3,7 +3,8 @@
 -- in the array for any tower-related logic, or skip if none.
 -- A more advanced approach would pick the "closest tower" or "lowest HP tower," etc.
 -- Now using EventBus architecture for better integration with the game.
--- UPDATED: Removed legacy takeTurn method in favor of event-based handling
+-- UPDATED: Removed legacy callbacks in favor of event-based handling
+-- FIXED: Tower damage events now use Combat.resolveAttack properly
 
 local AIManager = {}
 AIManager.__index = AIManager
@@ -509,13 +510,17 @@ function AIManager:attackWithMinions(aiPlayer)
         local bestAttack = self:findBestAttackTarget(attacker, x, y)
         if bestAttack then
             if bestAttack.type == "minion" then
+                -- Use Combat.resolveAttack for minion attacks
                 local result = Combat.resolveAttack(gm, {type = "minion", minion = attacker}, {type = "minion", minion = bestAttack.target})
-                -- Publish attack event
-                EventBus.publish(EventBus.Events.MINION_ATTACKED, attacker, bestAttack.target)
+                
+                -- The resolveAttack function already publishes the appropriate events
             elseif bestAttack.type == "tower" then
+                -- FIXED: Use Combat.resolveAttack for tower attacks too
+                -- Let the combat system handle the tower damage event publishing
                 local result = Combat.resolveAttack(gm, {type = "minion", minion = attacker}, {type = "tower", tower = bestAttack.target})
-                -- Publish tower attack event
-                EventBus.publish(EventBus.Events.TOWER_DAMAGED, bestAttack.target, attacker, attacker.attack)
+                
+                -- REMOVED: Don't manually publish TOWER_DAMAGED event here!
+                -- That causes duplicate/incomplete events
             end
         end
     end

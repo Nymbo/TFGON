@@ -2,6 +2,7 @@
 -- This module now creates boards based on provided configuration.
 -- Integrated with EventBus for movement events.
 -- FIXED: Proper minion death handling when health goes to zero or negative
+-- FIXED: Improved enemy minion death handling
 
 local Board = {}
 Board.__index = Board
@@ -132,20 +133,24 @@ function Board:applyDamageToMinion(minion, damage, source)
         
         -- Trigger deathrattle if present
         if minion.deathrattle then
-            -- Find the game manager through the minion's owner
-            local gameManager = nil
-            for _, scene in pairs(love.handlers) do
-                if scene.gameManager then
-                    gameManager = scene.gameManager
-                    break
-                end
-            end
-            EventBus.publish(EventBus.Events.DEATHRATTLE_TRIGGERED, minion, minion.owner, gameManager)
+            -- Use the event system to trigger the deathrattle
+            -- We don't need to find the game manager anymore
+            EventBus.publish(EventBus.Events.DEATHRATTLE_TRIGGERED, minion, minion.owner)
         end
         
-        -- Remove minion from the board
-        if minion.position then
+        -- FIXED: Make sure to remove the minion from the board regardless of owner
+        -- The bug was likely because the Position check was failing
+        if minion.position and minion.position.x and minion.position.y then
             self:removeMinion(minion.position.x, minion.position.y)
+        else
+            -- Log error and attempt to find the minion on the board
+            print("WARNING: Minion position missing, searching board...")
+            self:forEachMinion(function(boardMinion, x, y)
+                if boardMinion == minion then
+                    print("Found minion at position: " .. x .. "," .. y)
+                    self:removeMinion(x, y)
+                end
+            end)
         end
     end
     

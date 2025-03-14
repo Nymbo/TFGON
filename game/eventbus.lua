@@ -46,8 +46,11 @@ EventBus.Events = {
     WEAPON_BROKEN = "weapon:broken",
     
     -- Tower events
+    TOWER_CREATED = "tower:created",
     TOWER_DAMAGED = "tower:damaged",
     TOWER_DESTROYED = "tower:destroyed",
+    TOWER_HEALED = "tower:healed",
+    TOWER_STAT_CHANGED = "tower:statChanged",
     
     -- Player events
     PLAYER_MANA_CHANGED = "player:manaChanged",

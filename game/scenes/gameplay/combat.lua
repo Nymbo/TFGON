@@ -3,6 +3,7 @@
 -- Now fully integrated with EventBus for decoupled architecture
 -- Fixed implementation of Glancing Blows effect
 -- FIXED: Prevention of friendly fire on towers
+-- REFACTORED: Tower damage and health changes now fully event-based
 
 local CombatSystem = {}
 local EffectManager = require("game.managers.effectmanager")
@@ -101,17 +102,24 @@ function CombatSystem.resolveAttack(gameplayOrManager, attackerInfo, targetInfo)
             local attackerReach = getReach(attacker.archetype)
             
             if distance <= attackerReach then
+                -- Publish minion attacked event first
+                EventBus.publish(EventBus.Events.MINION_ATTACKED, attacker, {type = "tower", tower = tower})
+                
                 -- Store old tower health for events
                 local oldHealth = tower.hp
                 
-                -- Publish tower attacked event
-                EventBus.publish(EventBus.Events.MINION_ATTACKED, attacker, {type = "tower", tower = tower})
+                -- Calculate new health
+                local newHealth = oldHealth - attacker.attack
                 
-                -- Apply damage to tower
-                tower.hp = tower.hp - attacker.attack
-                
-                -- Publish tower damaged event
-                EventBus.publish(EventBus.Events.TOWER_DAMAGED, tower, attacker, attacker.attack, oldHealth, tower.hp)
+                -- Publish tower damage event with all relevant data
+                -- The GameManager will listen for this event and update tower health
+                EventBus.publish(EventBus.Events.TOWER_DAMAGED, 
+                    tower,                  -- The tower being damaged
+                    attacker,               -- The source of damage
+                    attacker.attack,        -- Amount of damage
+                    oldHealth,              -- Health before damage
+                    newHealth               -- Health after damage
+                )
                 
                 print(attacker.name .. " attacked a tower for " .. attacker.attack .. " damage!")
                 
@@ -120,12 +128,8 @@ function CombatSystem.resolveAttack(gameplayOrManager, attackerInfo, targetInfo)
                     EffectManager.reduceWeaponDurability(attacker)
                 end
                 
-                -- Check if tower is destroyed
-                if tower.hp <= 0 then
-                    -- Tower destruction is now handled by GameManager:update()
-                    -- But we'll still publish the event here for immediate effects
-                    EventBus.publish(EventBus.Events.TOWER_DESTROYED, tower, attacker)
-                end
+                -- Note: We no longer directly set tower.hp here
+                -- The GameManager's event handler will handle that
                 
                 attacker.canAttack = false
             else
