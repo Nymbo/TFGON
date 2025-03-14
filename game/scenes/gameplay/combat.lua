@@ -2,6 +2,7 @@
 -- Refactored to use board methods for state changes
 -- Now fully integrated with EventBus for decoupled architecture
 -- Fixed implementation of Glancing Blows effect
+-- FIXED: Prevention of friendly fire on towers
 
 local CombatSystem = {}
 local EffectManager = require("game.managers.effectmanager")
@@ -84,38 +85,18 @@ function CombatSystem.resolveAttack(gameplayOrManager, attackerInfo, targetInfo)
                 EffectManager.reduceWeaponDurability(attacker)
             end
 
-            -- Check for target death
-            if target.currentHealth <= 0 then
-                local tx, ty = target.position.x, target.position.y
-                
-                -- Trigger deathrattle effect before death event
-                if target.deathrattle then
-                    EventBus.publish(EventBus.Events.DEATHRATTLE_TRIGGERED, target, gm:getEnemyPlayer(attacker.owner), gm)
-                end
-                
-                -- Remove minion from board - the board's removeMinion now publishes MINION_REMOVED event
-                board:removeMinion(tx, ty)
-                print(target.name .. " has been defeated!")
-            end
-
-            -- Check for attacker death
-            if attacker.currentHealth <= 0 then
-                local ax, ay = attacker.position.x, attacker.position.y
-                
-                -- Trigger deathrattle effect before death event
-                if attacker.deathrattle then
-                    EventBus.publish(EventBus.Events.DEATHRATTLE_TRIGGERED, attacker, attacker.owner, gm)
-                end
-                
-                -- Remove minion from board - the board's removeMinion now publishes MINION_REMOVED event
-                board:removeMinion(ax, ay)
-                print(attacker.name .. " has been defeated!")
-            end
-
             attacker.canAttack = false
 
         elseif targetInfo.type == "tower" then
             local tower = targetInfo.tower
+            
+            -- FIXED: Check if tower belongs to the current player (prevent friendly fire)
+            if tower.owner == attacker.owner then
+                print("Cannot attack your own tower!")
+                EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "AttackFailed", "FriendlyTower")
+                return
+            end
+            
             local distance = chebyshevDistance(attacker.position, tower.position)
             local attackerReach = getReach(attacker.archetype)
             

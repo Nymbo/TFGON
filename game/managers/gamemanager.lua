@@ -7,6 +7,7 @@
 --   * Now with support for targeting effects
 --   * Integrated with EventBus for better decoupling
 --   * Added proper handling of Glancing Blows property
+--   * UPDATED: Removed legacy callbacks in favor of event bus
 
 local Player = require("game.core.player")
 local Board = require("game.core.board")
@@ -23,7 +24,6 @@ GameManager.__index = GameManager
 -- 'selectedDeck' is used for player 1.
 -- 'selectedBoard' is the board configuration to use.
 -- 'isAIOpponent' determines if player 2 should use an AI deck.
--- onTurnStart and onGameOver callbacks can be set.
 --------------------------------------------------
 function GameManager:new(selectedDeck, selectedBoard, isAIOpponent)
     local self = setmetatable({}, GameManager)
@@ -113,10 +113,6 @@ function GameManager:new(selectedDeck, selectedBoard, isAIOpponent)
         end
     end
 
-    -- Callback that the Gameplay scene can set
-    self.onTurnStart = nil
-    -- Callback triggered when the game is over
-    self.onGameOver = nil
     -- Flag to indicate game is over
     self.gameOver = false
     
@@ -243,7 +239,7 @@ end
 
 --------------------------------------------------
 -- startTurn():
--- Gains mana, draws a card, resets minions, triggers onTurnStart.
+-- Gains mana, draws a card, resets minions.
 --------------------------------------------------
 function GameManager:startTurn()
     local player = self:getCurrentPlayer()
@@ -276,15 +272,6 @@ function GameManager:startTurn()
             minion.canAttack = true
         end
     end)
-
-    -- Maintain compatibility with existing callbacks
-    if self.onTurnStart then
-        if self.currentPlayer == 1 then
-            self.onTurnStart("player1")
-        else
-            self.onTurnStart("player2")
-        end
-    end
     
     -- Publish turn started event with the player object
     EventBus.publish(EventBus.Events.TURN_STARTED, player)
@@ -408,7 +395,7 @@ function GameManager:summonMinion(player, card, cardIndex, x, y)
         summoningSickness = true,
         battlecry = card.battlecry,
         deathrattle = card.deathrattle,
-        glancingBlows = card.glancingBlows  -- Properly copy the glancingBlows property
+        glancingBlows = card.glancingBlows  -- Properly copy the Glancing Blows property
     }
     
     -- Place on board
@@ -466,11 +453,6 @@ function GameManager:endGame()
         print(winner.name .. " wins the match!")
     else
         print("The match ends in a draw.")
-    end
-
-    -- Call legacy callback for backward compatibility
-    if self.onGameOver then
-        self.onGameOver(winner)
     end
     
     -- Publish game ended event

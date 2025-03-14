@@ -3,6 +3,7 @@
 -- in the array for any tower-related logic, or skip if none.
 -- A more advanced approach would pick the "closest tower" or "lowest HP tower," etc.
 -- Now using EventBus architecture for better integration with the game.
+-- UPDATED: Removed legacy takeTurn method in favor of event-based handling
 
 local AIManager = {}
 AIManager.__index = AIManager
@@ -164,24 +165,6 @@ function AIManager:executeTurn(player)
     
     -- Optionally publish event when AI starts thinking for UI feedback
     EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "AIThinking")
-end
-
---------------------------------------------------
--- takeTurn():
--- Legacy method kept for backward compatibility during refactoring.
--- Will be removed once all code is migrated to use events.
---------------------------------------------------
-function AIManager:takeTurn()
-    local gm = self.gameManager
-    local aiPlayer = gm.player2
-
-    love.timer.sleep(0.5)
-
-    self:playCards(aiPlayer)
-    self:moveMinions(aiPlayer)
-    self:attackWithMinions(aiPlayer)
-
-    gm:endTurn()
 end
 
 function AIManager:playCards(aiPlayer)
@@ -366,6 +349,7 @@ function AIManager:moveMinions(aiPlayer)
             local success = board:moveMinion(fromX, fromY, bestMove.x, bestMove.y)
             if success then
                 minion.hasMoved = true
+                
                 -- Publish minion moved event
                 EventBus.publish(EventBus.Events.MINION_MOVED, minion, fromX, fromY, bestMove.x, bestMove.y)
             end

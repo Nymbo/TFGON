@@ -2,6 +2,7 @@
 -- Centralizes all event subscriptions for the gameplay scene
 -- Makes event handling more organized and maintainable
 -- Added debugging for Glancing Blows effect
+-- UPDATED: Removed banner system references and redundant code
 
 local EventBus = require("game.eventbus")
 local ErrorLog = require("game.utils.errorlog")
@@ -41,20 +42,6 @@ end
 -- initEventSubscriptions: Set up all event listeners
 --------------------------------------------------
 function EventHandlers:initEventSubscriptions()
-    -- Subscribe to turn events
-    table.insert(self.eventSubscriptions, EventBus.subscribe(
-        EventBus.Events.TURN_STARTED,
-        function(player)
-            local bannerType = (player == self.gameplayScene.gameManager.player1) and "player" or "opponent"
-            local text = (player == self.gameplayScene.gameManager.player1) and "YOUR TURN" or 
-                       (self.gameplayScene.aiOpponent and "AI OPPONENT'S TURN" or "OPPONENT'S TURN")
-            
-            -- Simply publish the event - the banner display is handled elsewhere now
-            EventBus.publish(EventBus.Events.BANNER_DISPLAYED, bannerType, text)
-        end,
-        "EventHandlers-BannerHandler"
-    ))
-    
     -- If AI opponent is enabled, subscribe to turn events
     if self.gameplayScene.aiOpponent then
         -- Listen for turn started events to trigger AI turn

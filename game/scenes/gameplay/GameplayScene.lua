@@ -1,6 +1,7 @@
 -- game/scenes/gameplay/GameplayScene.lua
 -- Core gameplay scene that orchestrates all components
 -- Acts as the main entry point for the gameplay scene
+-- UPDATED: Removed legacy callbacks and banner system references
 
 local GameManager = require("game.managers.gamemanager")
 local EventBus = require("game.eventbus")
@@ -141,19 +142,8 @@ function GameplayScene:new(changeSceneCallback, selectedDeck, selectedBoard, aiO
     self.gameOverManager = GameOverManager:new(self)
     self.inputHandler = InputHandler:new(self)
 
-    -- Setup callback for game over
-    self.gameManager.onGameOver = function(winner)
-        ErrorLog.logError("Game over triggered. Winner: " .. (winner and winner.name or "none"), true)
-        self.showGameOverPopup = true
-        self.gameOverWinner = winner
-        self.gameOverManager:handleGameOver(winner)
-    end
-    
-    -- Legacy callback to maintain compatibility
-    self.gameManager.onTurnStart = function(whichPlayer)
-        -- This is kept for backward compatibility but no longer sets banner properties
-        -- Banner display is now managed through events
-    end
+    -- Setup event subscriptions for game over and other events
+    self:initEventSubscriptions()
 
     -- Start the first turn to initialize the game
     ErrorLog.logError("Starting first game turn", true)
@@ -167,6 +157,32 @@ function GameplayScene:new(changeSceneCallback, selectedDeck, selectedBoard, aiO
     
     ErrorLog.logError("Gameplay scene initialization complete", true)
     return self
+end
+
+--------------------------------------------------
+-- initEventSubscriptions: Set up event listeners
+--------------------------------------------------
+function GameplayScene:initEventSubscriptions()
+    self.eventSubscriptions = {}
+    
+    -- Subscribe to game ended event to handle game over
+    table.insert(self.eventSubscriptions, EventBus.subscribe(
+        EventBus.Events.GAME_ENDED,
+        function(winner)
+            self.showGameOverPopup = true
+            self.gameOverWinner = winner
+        end,
+        "GameplayScene-GameOverHandler"
+    ))
+    
+    -- Subscribe to turn started events for any scene-level handling needed
+    table.insert(self.eventSubscriptions, EventBus.subscribe(
+        EventBus.Events.TURN_STARTED,
+        function(player)
+            -- Any scene-level turn handling goes here (if needed in the future)
+        end,
+        "GameplayScene-TurnStartHandler"
+    ))
 end
 
 --------------------------------------------------
@@ -342,6 +358,11 @@ end
 --------------------------------------------------
 function GameplayScene:destroy()
     ErrorLog.logError("Destroying gameplay scene", true)
+    
+    -- Clean up event subscriptions
+    for _, sub in ipairs(self.eventSubscriptions) do
+        EventBus.unsubscribe(sub)
+    end
     
     -- Clean up components
     if self.stateManager.destroy then self.stateManager:destroy() end

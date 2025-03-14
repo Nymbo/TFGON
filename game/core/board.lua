@@ -1,6 +1,8 @@
 -- game/core/board.lua
 -- This module now creates boards based on provided configuration.
 -- Integrated with EventBus for movement events.
+-- FIXED: Proper minion death handling when health goes to zero or negative
+
 local Board = {}
 Board.__index = Board
 
@@ -103,6 +105,7 @@ end
 --------------------------------------------------
 -- applyDamageToMinion: Apply damage to a minion
 -- Publishes MINION_DAMAGED event
+-- FIXED: Now properly handles minion death (health <= 0)
 --------------------------------------------------
 function Board:applyDamageToMinion(minion, damage, source)
     if not minion or damage <= 0 then return false end
@@ -122,11 +125,28 @@ function Board:applyDamageToMinion(minion, damage, source)
         minion.currentHealth -- Health after damage
     )
     
-    -- Check if minion died
+    -- Check if minion died and handle death immediately
     if minion.currentHealth <= 0 then
-        -- We let the combat system or game manager handle minion death
-        -- But we can publish a minion died event
+        -- Publish a minion died event before removal
         EventBus.publish(EventBus.Events.MINION_DIED, minion, source)
+        
+        -- Trigger deathrattle if present
+        if minion.deathrattle then
+            -- Find the game manager through the minion's owner
+            local gameManager = nil
+            for _, scene in pairs(love.handlers) do
+                if scene.gameManager then
+                    gameManager = scene.gameManager
+                    break
+                end
+            end
+            EventBus.publish(EventBus.Events.DEATHRATTLE_TRIGGERED, minion, minion.owner, gameManager)
+        end
+        
+        -- Remove minion from the board
+        if minion.position then
+            self:removeMinion(minion.position.x, minion.position.y)
+        end
     end
     
     return true
