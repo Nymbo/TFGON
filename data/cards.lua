@@ -3,6 +3,7 @@
 -- Weapons now have archetypeRequirement to indicate which minions can equip them.
 -- Now integrating with EventBus for better effect handling
 -- Added Street Fighter with Glancing Blows effect
+
 local EventBus = require("game.eventbus")  -- Import EventBus
 
 return {
@@ -162,6 +163,13 @@ return {
         cardType = "Spell",
         cost = 4,
         effectKey = "FireballEffect"
+    },
+    -- New Spell Card: Rapid Resupply
+    {
+        name = "Rapid Resupply",
+        cardType = "Spell",
+        cost = 3,
+        effectKey = "RapidResupplyEffect"
     },
 
     --------------------------------------------------

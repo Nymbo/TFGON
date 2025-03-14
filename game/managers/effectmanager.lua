@@ -123,8 +123,20 @@ local effectRegistry = {
         end
     },
 
+    -- New effect: Rapid Resupply
+    RapidResupplyEffect = {
+        requiresTarget = false,  -- This spell does not require a target
+        effectFn = function(gameManager, player, target, card)
+            -- Draw 2 cards for the player
+            player:drawCard(2)
+            print(player.name .. " used Rapid Resupply and drew 2 cards!")
+            -- Publish spell cast event for logging/other listeners
+            EventBus.publish(EventBus.Events.SPELL_CAST, player, "RapidResupply", target)
+            return true
+        end
+    },
+
     -- Using the factory function to create weapon effects
-    -- This reduces duplicate code while keeping each effect distinct
     FieryWarAxeEffect = createWeaponEffect("Melee"),
     LongbowEffect = createWeaponEffect("Ranged"),
     StaffOfFireEffect = createWeaponEffect("Magic")
@@ -316,28 +328,26 @@ function EffectManager.triggerBattlecry(card, gameManager, player)
 end
 
 --------------------------------------------------
--- triggerDeathrattle(minion, gameManager, owningPlayer):
+-- triggerDeathrattle(card, gameManager, player):
 --   If a minion has a 'deathrattle' function in its data,
---   call it right before the minion is removed from the board.
+--   call it here. This is triggered when the minion dies.
 --------------------------------------------------
-function EffectManager.triggerDeathrattle(minion, gameManager, owningPlayer)
-    -- For minion-based card data, you might store 'deathrattle'
-    -- in the same table as 'attack', 'health', etc.
-    --
-    -- Check if that data is attached:
-    if minion.deathrattle and type(minion.deathrattle) == "function" then
+function EffectManager.triggerDeathrattle(card, gameManager, player)
+    if card and card.deathrattle and type(card.deathrattle) == "function" then
         -- Publish deathrattle triggering event before execution
-        EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "DeathrattleTriggering", owningPlayer, minion)
+        EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "DeathrattleTriggering", player, card)
         
         -- Execute the deathrattle
-        minion.deathrattle(gameManager, owningPlayer)
+        card.deathrattle(gameManager, player)
         
         -- Publish deathrattle complete event
-        EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "DeathrattleComplete", owningPlayer, minion)
+        EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "DeathrattleComplete", player, card)
     end
 end
 
--- Initialize event subscriptions when the module is loaded
+--------------------------------------------------
+-- Initialize the EffectManager event subscriptions
+--------------------------------------------------
 EffectManager.initEventSubscriptions()
 
 return EffectManager
