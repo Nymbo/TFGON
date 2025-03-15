@@ -8,13 +8,14 @@ local DeckManager = require("game.managers.deckmanager")
 local cardsData = require("data.cards")
 local Theme = require("game.ui.theme")
 local CardRenderer = require("game.ui.cardrenderer")
+local flux = require("libs.flux") -- Require the flux library for smooth scrolling
 
 --------------------------------------------------
 -- Constructor for the Collection scene.
 --------------------------------------------------
 function Collection:new(changeSceneCallback)
     local self = setmetatable({}, Collection)
-    
+
     self.changeSceneCallback = changeSceneCallback
 
     -- Initialize deck manager and get decks
@@ -24,7 +25,13 @@ function Collection:new(changeSceneCallback)
 
     -- Card pool is all cards from data/cards.lua
     self.cardPool = cardsData
-    self.poolScroll = 0  -- Offset index for the card pool
+    self.poolScrollY = 0  -- Vertical scroll offset for the card pool
+    self.scrollSpeed = 20 -- Adjust as needed
+    self.scrollBarWidth = 10
+    self.scrollBarHandleHeight = 0
+    self.scrollBarY = 0
+    self.isScrollBarDragging = false
+    self.scrollBarDragOffsetY = 0
 
     -- UI dimensions
     self.screenWidth = love.graphics.getWidth()
@@ -40,20 +47,36 @@ function Collection:new(changeSceneCallback)
 
     -- Get card dimensions from CardRenderer
     self.cardWidth, self.cardHeight = CardRenderer.getCardDimensions()
-    
-    -- Grid layout for card pool (5 columns x 2 rows)
+
+    -- Grid layout for card pool
     local margin = 20
     self.gridColumns = 5
-    self.gridRows = 2
     self.gridMargin = margin
-    
+
     -- Calculate card spacing
     self.cardSpacingX = (self.leftPanelWidth - (self.gridColumns + 1) * margin) / self.gridColumns
-    self.cardSpacingY = (self.screenHeight - (self.gridRows + 1) * margin) / self.gridRows
+    self.cardSpacingY = margin -- Initial Y spacing, will be adjusted based on card height
 
     -- Load the new background image for the collection scene
     self.collectionBackground = love.graphics.newImage("assets/images/collection_background.png")
-    
+
+    -- Calculate the total height of the card pool content
+    local totalCards = #self.cardPool
+    local totalRows = math.ceil(totalCards / self.gridColumns)
+    self.cardPoolHeight = (totalRows * (self.cardHeight + self.gridMargin)) + Theme.fonts.subtitle:getHeight() + 2 * self.gridMargin
+
+    -- Calculate the visible height for the card pool
+    self.cardPoolVisibleHeight = self.screenHeight
+
+    -- Calculate the scrollbar handle height based on the ratio of visible content to total content
+    if self.cardPoolHeight > self.cardPoolVisibleHeight then
+        self.scrollBarHandleHeight = math.max(20, (self.cardPoolVisibleHeight / self.cardPoolHeight) * self.cardPoolVisibleHeight)
+    else
+        self.scrollBarHandleHeight = self.cardPoolVisibleHeight -- If all content is visible, the handle fills the bar
+    end
+    self.maxScrollY = math.max(0, self.cardPoolHeight - self.cardPoolVisibleHeight)
+
+
     return self
 end
 
@@ -68,33 +91,51 @@ end
 -- draw(): Render the collection scene
 --------------------------------------------------
 function Collection:draw()
-    -- Draw the new background image with 50% opacity covering the entire screen.
+    -- Draw the new background image with full opacity covering the entire screen.
     local bg = self.collectionBackground
     local bgW, bgH = bg:getWidth(), bg:getHeight()
     local scale = math.max(self.screenWidth / bgW, self.screenHeight / bgH)
     local offsetX = (self.screenWidth - bgW * scale) / 2
     local offsetY = (self.screenHeight - bgH * scale) / 2
-    love.graphics.setColor(1, 1, 1, 1.0)  -- Set opacity to 50%
+    love.graphics.setColor(1, 1, 1, 1.0)
     love.graphics.draw(bg, offsetX, offsetY, 0, scale, scale)
     love.graphics.setColor(1, 1, 1, 1)    -- Reset color
 
     -- Draw left panel (card pool) with transparency
-    local leftPanelColor = {Theme.colors.backgroundLight[1], Theme.colors.backgroundLight[2], Theme.colors.backgroundLight[3], 0.7}
-    love.graphics.setColor(leftPanelColor)
+    love.graphics.setColor(Theme.colors.backgroundLight[1], Theme.colors.backgroundLight[2], Theme.colors.backgroundLight[3], 0.7)
     love.graphics.rectangle("fill", self.leftPanelX, self.leftPanelY, self.leftPanelWidth, self.screenHeight)
+
+    -- Draw "Card Collection" title at the top
+    love.graphics.setFont(Theme.fonts.subtitle)
+    love.graphics.setColor(Theme.colors.textPrimary)
+    local titleText = "Card Collection"
+    local titleX = self.leftPanelX + self.gridMargin
+    local titleY = self.leftPanelY + self.gridMargin
+    love.graphics.print(titleText, titleX, titleY)
+    local titleHeight = Theme.fonts.subtitle:getHeight() + 2 * self.gridMargin
+
+    -- Enable clipping for the card pool below the title
+    love.graphics.setScissor(self.leftPanelX, self.leftPanelY + titleHeight, self.leftPanelWidth - self.scrollBarWidth, self.screenHeight - titleHeight)
+    self:drawCardPool(titleHeight)
+    love.graphics.setScissor() -- Clear the scissor
+
+    -- Draw scrollbar if needed
+    if self.cardPoolHeight > self.cardPoolVisibleHeight then
+        self:drawScrollBar()
+    end
 
     -- Draw decorative separator between panels (opaque golden border)
     love.graphics.setColor(Theme.colors.buttonBorder)
     love.graphics.setLineWidth(2)
     -- Main vertical line
     love.graphics.line(self.leftPanelWidth, 0, self.leftPanelWidth, self.screenHeight)
-    
+
     -- Decorative elements
     local decorSize = 40
     local ySpacing = 120
     for y = ySpacing, self.screenHeight - ySpacing, ySpacing do
         -- Diamond shape
-        love.graphics.polygon('fill', 
+        love.graphics.polygon('fill',
             self.leftPanelWidth - decorSize/2, y,
             self.leftPanelWidth, y - decorSize/2,
             self.leftPanelWidth + decorSize/2, y,
@@ -112,12 +153,8 @@ function Collection:draw()
     end
     love.graphics.setLineWidth(1)
 
-    -- Draw panels' content
-    self:drawCardPool()
-
     -- Draw right panel (deck manager) with transparency
-    local rightPanelColor = {Theme.colors.backgroundLight[1], Theme.colors.backgroundLight[2], Theme.colors.backgroundLight[3], 0.7}
-    love.graphics.setColor(rightPanelColor)
+    love.graphics.setColor(Theme.colors.backgroundLight[1], Theme.colors.backgroundLight[2], Theme.colors.backgroundLight[3], 0.7)
     love.graphics.rectangle("fill", self.rightPanelX, self.rightPanelY, self.rightPanelWidth, self.screenHeight)
     self:drawDeckManager()
 end
@@ -125,33 +162,59 @@ end
 --------------------------------------------------
 -- drawCardPool(): Draw the scrollable card grid
 --------------------------------------------------
-function Collection:drawCardPool()
+function Collection:drawCardPool(yOffset)
     local margin = self.gridMargin
     local startX = margin
-    local startY = margin
+    local startY = margin + yOffset -- Adjusted startY
 
-    -- Title for card pool
-    love.graphics.setFont(Theme.fonts.subtitle)
-    love.graphics.setColor(Theme.colors.textPrimary)
-    love.graphics.print("Card Collection", startX, startY)
-    startY = startY + Theme.fonts.subtitle:getHeight() + margin
-
-    -- Calculate number of rows needed
-    local totalCards = #self.cardPool
-    local totalRows = math.ceil(totalCards / self.gridColumns)
+    -- Calculate the index range of cards to draw based on scroll position
+    local visibleStartRow = math.floor(self.poolScrollY / (self.cardHeight + margin))
+    local visibleEndRow = math.ceil((self.poolScrollY + self.cardPoolVisibleHeight - yOffset) / (self.cardHeight + margin))
 
     -- Draw all cards in a grid
     for i, card in ipairs(self.cardPool) do
         local col = (i - 1) % self.gridColumns
         local row = math.floor((i - 1) / self.gridColumns)
-        
-        local x = startX + col * (self.cardWidth + margin)
-        local y = startY + row * (self.cardHeight + margin)
-        
-        -- Draw the card at double size (scale is handled in dimensions)
-        CardRenderer.drawCard(card, x, y, false)  -- false = not playable, removes green outline
+
+        -- Only draw cards within the visible range
+        if row >= visibleStartRow and row <= visibleEndRow then
+            local x = startX + col * (self.cardWidth + margin)
+            local y = startY + row * (self.cardHeight + margin) - self.poolScrollY
+
+            -- Draw the card at double size (scale is handled in dimensions)
+            CardRenderer.drawCard(card, x, y, false)  -- false = not playable, removes green outline
+        end
     end
 end
+
+--------------------------------------------------
+-- drawScrollBar(): Draw the scroll bar
+--------------------------------------------------
+function Collection:drawScrollBar()
+    local barX = self.leftPanelWidth - self.scrollBarWidth
+    local barY = 0
+    local barHeight = self.screenHeight
+
+    -- Background of the scrollbar
+    love.graphics.setColor(Theme.colors.background)
+    love.graphics.rectangle("fill", barX, barY, self.scrollBarWidth, barHeight)
+
+    -- Calculate the position of the scrollbar handle
+    local scrollPercentage = self.poolScrollY / self.maxScrollY
+    local maxHandleY = barHeight - self.scrollBarHandleHeight
+    local handleY = scrollPercentage * maxHandleY
+
+    -- Draw the scrollbar handle
+    love.graphics.setColor(Theme.colors.buttonBase)
+    love.graphics.rectangle("fill", barX, barY + handleY, self.scrollBarWidth, self.scrollBarHandleHeight)
+
+    -- Store scrollbar position for interaction
+    self.scrollBarX = barX
+    self.scrollBarY = barY
+    self.scrollBarHeight = barHeight
+    self.scrollBarHandleY = barY + handleY
+end
+
 
 --------------------------------------------------
 -- drawDeckManager(): Draw deck slots and contents
@@ -197,7 +260,7 @@ function Collection:drawDeckManager()
     local cardCounts = {}
     local cardOrder = {}  -- To maintain original order
     local seenCards = {}
-    
+
     for i, card in ipairs(deck.cards) do
         if not seenCards[card.name] then
             seenCards[card.name] = true
@@ -255,7 +318,7 @@ function Collection:drawDeckManager()
         local circleRadius = cardButtonHeight/2 - 6
         local circleX = x + circleRadius + 10
         local circleY = buttonY + cardButtonHeight/2
-        
+
         -- Cost circle background and border
         love.graphics.setColor(Theme.colors.manaBg)
         love.graphics.circle("fill", circleX, circleY, circleRadius + 1)
@@ -351,7 +414,7 @@ function Collection:drawDeckManager()
     -- Shadow
     love.graphics.setColor(Theme.colors.buttonShadow)
     love.graphics.rectangle(
-        "fill", 
+        "fill",
         x + Theme.dimensions.buttonShadowOffset,
         validateY + Theme.dimensions.buttonShadowOffset,
         buttonWidth,
@@ -436,14 +499,48 @@ end
 -- mousepressed: Handle mouse input
 --------------------------------------------------
 function Collection:mousepressed(x, y, button, istouch, presses)
-    if button ~= 1 then return end
+    if button == 1 then
+        -- Check if the click is within the scrollbar handle
+        if x >= self.scrollBarX and x <= self.scrollBarX + self.scrollBarWidth and
+           y >= self.scrollBarHandleY and y <= self.scrollBarHandleY + self.scrollBarHandleHeight then
+            self.isScrollBarDragging = true
+            self.scrollBarDragOffsetY = y - self.scrollBarHandleY
+            return -- Consume the event
+        end
 
-    if x < self.leftPanelWidth then
-        self:handleCardPoolClick(x, y)
-    else
-        self:handleDeckManagerClick(x - self.rightPanelX, y)
+        if x < self.leftPanelWidth - self.scrollBarWidth then
+            self:handleCardPoolClick(x, y)
+        else
+            self:handleDeckManagerClick(x - self.rightPanelX, y)
+        end
     end
 end
+
+--------------------------------------------------
+-- mousemoved: Handle mouse movement for dragging
+--------------------------------------------------
+function Collection:mousemoved(x, y, dx, dy)
+    if self.isScrollBarDragging then
+        local newHandleY = y - self.scrollBarDragOffsetY
+        local maxHandleY = self.scrollBarY + self.scrollBarHeight - self.scrollBarHandleHeight
+        newHandleY = math.max(self.scrollBarY, math.min(newHandleY, maxHandleY))
+
+        -- Calculate the new scroll percentage
+        local scrollPercentage = (newHandleY - self.scrollBarY) / (maxHandleY - self.scrollBarY)
+        self.poolScrollY = scrollPercentage * self.maxScrollY
+    end
+end
+
+
+--------------------------------------------------
+-- mousereleased: Stop scrollbar dragging
+--------------------------------------------------
+function Collection:mousereleased(x, y, button, istouch, presses)
+    if button == 1 then
+        self.isScrollBarDragging = false
+    end
+end
+
 
 --------------------------------------------------
 -- handleCardPoolClick: Process card pool clicks
@@ -451,16 +548,20 @@ end
 function Collection:handleCardPoolClick(x, y)
     local margin = self.gridMargin
     local startX = margin
-    local startY = margin + Theme.fonts.subtitle:getHeight() + margin
+    local startY = margin
+
+    -- Adjust y coordinate for scrolling, taking into account the title's height
+    local titleHeight = Theme.fonts.subtitle:getHeight() + 2 * self.gridMargin
+    y = y - titleHeight + self.poolScrollY
 
     -- Calculate which card was clicked
     for i, card in ipairs(self.cardPool) do
         local col = (i - 1) % self.gridColumns
         local row = math.floor((i - 1) / self.gridColumns)
-        
+
         local cardX = startX + col * (self.cardWidth + margin)
         local cardY = startY + row * (self.cardHeight + margin)
-        
+
         if x >= cardX and x <= cardX + self.cardWidth and
            y >= cardY and y <= cardY + self.cardHeight then
             local success = DeckManager:addCardToDeck(self.selectedDeckIndex, card)
@@ -515,12 +616,12 @@ function Collection:handleDeckManagerClick(x, y)
     local cardButtonSpacing = 6
     local cardsStartY = deckStartY + (#self.decks * (slotHeight + 5)) + 60 + Theme.fonts.body:getHeight() + 10
     local deck = self.decks[self.selectedDeckIndex]
-    
+
     -- Count unique cards and maintain order
     local cardCounts = {}
     local cardOrder = {}
     local seenCards = {}
-    
+
     for i, card in ipairs(deck.cards) do
         if not seenCards[card.name] then
             seenCards[card.name] = true
@@ -528,7 +629,7 @@ function Collection:handleDeckManagerClick(x, y)
         end
         cardCounts[card.name] = (cardCounts[card.name] or 0) + 1
     end
-    
+
     -- Find which unique card was clicked
     local currentY = cardsStartY
     for i, card in ipairs(cardOrder) do
@@ -551,12 +652,7 @@ end
 -- wheelmoved: Handle scrolling
 --------------------------------------------------
 function Collection:wheelmoved(x, y)
-    if y > 0 then
-        self.poolScroll = math.max(0, self.poolScroll - self.gridColumns)
-    elseif y < 0 then
-        local maxScroll = math.max(0, #self.cardPool - (self.gridColumns * self.gridRows))
-        self.poolScroll = math.min(maxScroll, self.poolScroll + self.gridColumns)
-    end
+    self.poolScrollY = math.max(0, math.min(self.maxScrollY, self.poolScrollY - y * self.scrollSpeed))
 end
 
 --------------------------------------------------
