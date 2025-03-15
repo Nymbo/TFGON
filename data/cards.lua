@@ -178,6 +178,20 @@ return {
         cost = 1,
         effectKey = "ArcaneShotEffect"
     },
+    -- New Spell Card: Moonfire
+    {
+        name = "Moonfire",
+        cardType = "Spell",
+        cost = 0,
+        effectKey = "MoonfireEffect"
+    },
+    -- New Spell Card: Pyroblast
+    {
+        name = "Pyroblast",
+        cardType = "Spell",
+        cost = 10,
+        effectKey = "PyroblastEffect"
+    },
 
     --------------------------------------------------
     -- Minion with BATTLECRY - Draw a card

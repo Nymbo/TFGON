@@ -126,6 +126,10 @@ local function getCardEffectText(card)
             return "Draw 2 cards"
         elseif card.name == "Arcane Shot" then
             return "Deal 2 damage to any target"
+        elseif card.name == "Moonfire" then
+            return "Deal 1 damage to any target"
+        elseif card.name == "Pyroblast" then
+            return "Deal 10 damage to any target"
         else
             return "Cast a spell"  -- Default text for unknown spells
         end

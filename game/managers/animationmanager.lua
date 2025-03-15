@@ -60,6 +60,22 @@ AnimationManager.animationRegistry = {
         offset = {x = 0, y = 0},
         scale = "auto",
         soundEffect = "arcane_shot" -- Optional: different sound effect if available
+    },
+    ["Moonfire"] = {  -- Add Moonfire animation
+        spritesheet = "explosion", -- Using the same explosion sprite
+        framerate = 0.1,
+        loop = false,
+        offset = {x = 0, y = 0},
+        scale = "auto",
+        soundEffect = "moonfire" -- Optional: different sound effect if available
+    },
+    ["Pyroblast"] = {  -- Add Pyroblast animation
+        spritesheet = "explosion", -- Using the same explosion sprite
+        framerate = 0.1,
+        loop = false,
+        offset = {x = 0, y = 0},
+        scale = "auto",
+        soundEffect = "pyroblast" -- Optional: different sound effect if available
     }
 }
 

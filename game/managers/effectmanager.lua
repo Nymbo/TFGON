@@ -190,6 +190,116 @@ local effectRegistry = {
             end
         end
     },
+    
+    -- New effect: Moonfire
+    MoonfireEffect = {
+        requiresTarget = true,
+        targetType = "AnyTarget",
+        effectFn = function(gameManager, player, target, card)
+            -- Deal 1 damage to the target (minion or tower)
+            local damage = 1  -- Moonfire damage
+            
+            if target.currentHealth then
+                -- Target is a minion
+                gameManager.board:applyDamageToMinion(target, damage, nil)
+                
+                -- Publish spell cast event for animation and other listeners
+                EventBus.publish(EventBus.Events.SPELL_CAST, player, "Moonfire", target)
+                
+                print("Moonfire dealt " .. damage .. " damage to " .. target.name)
+                return true
+            elseif target.hp then
+                -- Target is a tower
+                -- Store old health for event
+                local oldHealth = target.hp
+                
+                -- Calculate new health
+                local newHealth = oldHealth - damage
+                
+                -- IMPORTANT: Directly update the tower's health for fallback
+                target.hp = newHealth
+                
+                -- Publish tower damaged event with proper parameters
+                EventBus.publish(EventBus.Events.TOWER_DAMAGED, 
+                    target,      -- The tower being damaged
+                    nil,         -- No attacker (spell damage)
+                    damage,      -- Amount of damage (1)
+                    oldHealth,   -- Health before damage
+                    newHealth    -- Health after damage
+                )
+                
+                print("Moonfire dealt " .. damage .. " damage to a tower!")
+                
+                -- Publish spell cast event for animation and other listeners
+                EventBus.publish(EventBus.Events.SPELL_CAST, player, "Moonfire", target)
+                
+                return true
+            else
+                -- Invalid target
+                print("Warning: Moonfire effect called without valid target")
+                
+                -- Publish spell cast failed event
+                EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "SpellCastFailed", player, "Moonfire")
+                
+                return false
+            end
+        end
+    },
+
+    -- New effect: Pyroblast
+    PyroblastEffect = {
+        requiresTarget = true,
+        targetType = "AnyTarget",
+        effectFn = function(gameManager, player, target, card)
+            -- Deal 10 damage to the target (minion or tower)
+            local damage = 10  -- Pyroblast damage
+            
+            if target.currentHealth then
+                -- Target is a minion
+                gameManager.board:applyDamageToMinion(target, damage, nil)
+                
+                -- Publish spell cast event for animation and other listeners
+                EventBus.publish(EventBus.Events.SPELL_CAST, player, "Pyroblast", target)
+                
+                print("Pyroblast dealt " .. damage .. " damage to " .. target.name)
+                return true
+            elseif target.hp then
+                -- Target is a tower
+                -- Store old health for event
+                local oldHealth = target.hp
+                
+                -- Calculate new health
+                local newHealth = oldHealth - damage
+                
+                -- IMPORTANT: Directly update the tower's health for fallback
+                target.hp = newHealth
+                
+                -- Publish tower damaged event with proper parameters
+                EventBus.publish(EventBus.Events.TOWER_DAMAGED, 
+                    target,      -- The tower being damaged
+                    nil,         -- No attacker (spell damage)
+                    damage,      -- Amount of damage (10)
+                    oldHealth,   -- Health before damage
+                    newHealth    -- Health after damage
+                )
+                
+                print("Pyroblast dealt " .. damage .. " damage to a tower!")
+                
+                -- Publish spell cast event for animation and other listeners
+                EventBus.publish(EventBus.Events.SPELL_CAST, player, "Pyroblast", target)
+                
+                return true
+            else
+                -- Invalid target
+                print("Warning: Pyroblast effect called without valid target")
+                
+                -- Publish spell cast failed event
+                EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "SpellCastFailed", player, "Pyroblast")
+                
+                return false
+            end
+        end
+    },
 
     -- Using the factory function to create weapon effects
     FieryWarAxeEffect = createWeaponEffect("Melee"),
