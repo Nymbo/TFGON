@@ -195,6 +195,31 @@ function TargetingSystem:updateValidTargets()
                 end
             end
         end)
+    elseif targetType == "AnyTarget" then
+        -- Find all minions (friendly and enemy)
+        gm.board:forEachMinion(function(minion, x, y)
+            table.insert(self.validTargets, {
+                type = "minion",
+                minion = minion,
+                position = { x = x, y = y }
+            })
+        end)
+        
+        -- Add all towers (friendly and enemy) as valid targets
+        for _, tower in ipairs(currentPlayer.towers) do
+            table.insert(self.validTargets, { 
+                type = "tower", 
+                tower = tower,
+                position = tower.position 
+            })
+        end
+        for _, tower in ipairs(enemyPlayer.towers) do
+            table.insert(self.validTargets, { 
+                type = "tower", 
+                tower = tower,
+                position = tower.position 
+            })
+        end
     end
     
     -- ADDED: If this effect doesn't require a target, create a dummy "board" target

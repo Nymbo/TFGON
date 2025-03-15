@@ -150,6 +150,20 @@ function AnimationController:initEventSubscriptions()
         end,
         "AnimationController-Movement"
     ))
+    
+    -- Subscribe to spell cast events 
+    table.insert(self.eventSubscriptions, EventBus.subscribe(
+        EventBus.Events.SPELL_CAST,
+        function(player, spellName, target)
+            -- Add to animation queue for spells
+            self:queueAnimation("spellCast", {
+                player = player,
+                spellName = spellName,
+                target = target
+            })
+        end,
+        "AnimationController-SpellCast"
+    ))
 end
 
 --------------------------------------------------
@@ -212,15 +226,24 @@ function AnimationController:playAnimation(animType, data)
         return
     end
     
-    if animType == "cardPlayed" and data.card.cardType == "Spell" and data.card.name == "Fireball" then
-        -- Fireball animations are handled by event subscriptions in AnimationManager
+    if animType == "spellCast" then
+        -- Play specific spell animations
+        if data.spellName == "Fireball" and data.target and data.target.position then
+            AnimationManager:playAnimation("Fireball", data.target.position.x, data.target.position.y)
+            self.gameplayScene.waitingForAnimation = true
+        elseif data.spellName == "Arcane Shot" and data.target and data.target.position then
+            AnimationManager:playAnimation("Arcane Shot", data.target.position.x, data.target.position.y)
+            self.gameplayScene.waitingForAnimation = true
+        end
     elseif animType == "damage" or animType == "heal" or animType == "death" or 
            animType == "movement" or animType == "towerDamage" then
         -- These will be implemented as AnimationManager capabilities expand
     end
     
     -- If we have no specific animation, just mark as not waiting
-    self.gameplayScene.waitingForAnimation = false
+    if not self.gameplayScene.waitingForAnimation then
+        self.gameplayScene.waitingForAnimation = false
+    end
 end
 
 return AnimationController

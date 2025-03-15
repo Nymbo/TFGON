@@ -52,6 +52,14 @@ AnimationManager.animationRegistry = {
         offset = {x = 0, y = 0},
         scale = "auto", -- Will be calculated to fit the tile
         soundEffect = "fireball"
+    },
+    ["Arcane Shot"] = {  -- Add Arcane Shot animation
+        spritesheet = "explosion", -- Using the same explosion sprite
+        framerate = 0.1,
+        loop = false,
+        offset = {x = 0, y = 0},
+        scale = "auto",
+        soundEffect = "arcane_shot" -- Optional: different sound effect if available
     }
 }
 
@@ -112,6 +120,14 @@ function AnimationManager:initEventSubscriptions()
         function(player, spellName, target)
             if spellName == "Fireball" and target then
                 self:playAnimation("Fireball", target.position.x, target.position.y)
+            elseif spellName == "Arcane Shot" and target then
+                -- Handle Arcane Shot animation
+                local posX, posY
+                if target.position then
+                    -- Target is either a minion or tower with a position
+                    posX, posY = target.position.x, target.position.y
+                    self:playAnimation("Arcane Shot", posX, posY)
+                end
             end
         end,
         "AnimationManager-SpellCast"

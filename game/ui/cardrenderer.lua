@@ -124,6 +124,8 @@ local function getCardEffectText(card)
             return "Deal 6 damage to enemy tower"
         elseif card.name == "Rapid Resupply" then
             return "Draw 2 cards"
+        elseif card.name == "Arcane Shot" then
+            return "Deal 2 damage to any target"
         else
             return "Cast a spell"  -- Default text for unknown spells
         end

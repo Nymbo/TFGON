@@ -171,6 +171,13 @@ return {
         cost = 3,
         effectKey = "RapidResupplyEffect"
     },
+    -- New Spell Card: Arcane Shot
+    {
+        name = "Arcane Shot",
+        cardType = "Spell",
+        cost = 1,
+        effectKey = "ArcaneShotEffect"
+    },
 
     --------------------------------------------------
     -- Minion with BATTLECRY - Draw a card

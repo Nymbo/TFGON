@@ -136,6 +136,61 @@ local effectRegistry = {
         end
     },
 
+    -- New effect: Arcane Shot
+    ArcaneShotEffect = {
+        requiresTarget = true,
+        targetType = "AnyTarget", -- New target type that includes both minions and towers
+        effectFn = function(gameManager, player, target, card)
+            -- Deal 2 damage to the target (minion or tower)
+            local damage = 2  -- Arcane Shot damage
+            
+            if target.currentHealth then
+                -- Target is a minion
+                gameManager.board:applyDamageToMinion(target, damage, nil)
+                
+                -- Publish spell cast event for animation and other listeners
+                EventBus.publish(EventBus.Events.SPELL_CAST, player, "Arcane Shot", target)
+                
+                print("Arcane Shot dealt " .. damage .. " damage to " .. target.name)
+                return true
+            elseif target.hp then
+                -- Target is a tower
+                -- Store old health for event
+                local oldHealth = target.hp
+                
+                -- Calculate new health
+                local newHealth = oldHealth - damage
+                
+                -- IMPORTANT: Directly update the tower's health for fallback
+                target.hp = newHealth
+                
+                -- Publish tower damaged event with proper parameters
+                EventBus.publish(EventBus.Events.TOWER_DAMAGED, 
+                    target,      -- The tower being damaged
+                    nil,         -- No attacker (spell damage)
+                    damage,      -- Amount of damage (2)
+                    oldHealth,   -- Health before damage
+                    newHealth    -- Health after damage
+                )
+                
+                print("Arcane Shot dealt " .. damage .. " damage to a tower!")
+                
+                -- Publish spell cast event for animation and other listeners
+                EventBus.publish(EventBus.Events.SPELL_CAST, player, "Arcane Shot", target)
+                
+                return true
+            else
+                -- Invalid target
+                print("Warning: Arcane Shot effect called without valid target")
+                
+                -- Publish spell cast failed event
+                EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "SpellCastFailed", player, "Arcane Shot")
+                
+                return false
+            end
+        end
+    },
+
     -- Using the factory function to create weapon effects
     FieryWarAxeEffect = createWeaponEffect("Melee"),
     LongbowEffect = createWeaponEffect("Ranged"),
