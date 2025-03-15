@@ -73,6 +73,7 @@ end
 
 --------------------------------------------------
 -- beginTargeting: Start the targeting process
+-- Modified to work with dragged card visuals
 --------------------------------------------------
 function TargetingSystem:beginTargeting(effectKey, card, cardIndex)
     local gm = self.gameplayScene.gameManager
@@ -82,8 +83,9 @@ function TargetingSystem:beginTargeting(effectKey, card, cardIndex)
     self.pendingEffectCard = card
     self.pendingEffectCardIndex = cardIndex
     
-    -- Remove card from hand to show it's being played
-    table.remove(gm:getCurrentPlayer().hand, cardIndex)
+    -- NOTE: We no longer remove the card from hand here
+    -- The InputHandler has already done this and is now
+    -- handling the dragged card visuals
     
     -- Start tracking valid targets
     self:updateValidTargets()
@@ -94,19 +96,14 @@ end
 
 --------------------------------------------------
 -- cancelTargeting: Cancel the targeting process
+-- Modified to work with dragged card system
 --------------------------------------------------
 function TargetingSystem:cancelTargeting()
     if not self:hasPendingEffect() then return end
     
-    local gm = self.gameplayScene.gameManager
-    
-    -- Put the card back in hand
-    table.insert(
-        gm:getCurrentPlayer().hand, 
-        self.pendingEffectCardIndex, 
-        self.pendingEffectCard
-    )
-    
+    -- The card is already being handled by InputHandler's draggedCard system
+    -- So we don't need to reinsert it into the hand
+
     -- Publish a targeting cancelled event
     EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "TargetingCancelled", self.pendingEffectCard)
     
@@ -115,6 +112,7 @@ function TargetingSystem:cancelTargeting()
     self.pendingEffectCard = nil
     self.pendingEffectCardIndex = nil
     self.validTargets = {}
+    self.isNonTargetingEffect = false
 end
 
 --------------------------------------------------
@@ -198,6 +196,14 @@ function TargetingSystem:updateValidTargets()
             end
         end)
     end
+    
+    -- ADDED: If this effect doesn't require a target, create a dummy "board" target
+    -- This allows non-targeting spells to be played with a board click
+    if not EffectManager.requiresTarget(self.pendingEffect) then
+        self.isNonTargetingEffect = true
+    else 
+        self.isNonTargetingEffect = false
+    end
 end
 
 --------------------------------------------------
@@ -206,6 +212,39 @@ end
 function TargetingSystem:drawTargetingIndicators()
     local boardX, boardY = BoardRenderer.getBoardPosition()
     local TILE_SIZE = BoardRenderer.getTileSize()
+    
+    -- For non-targeting spells, show a global highlight on the board
+    if self.isNonTargetingEffect then
+        local gm = self.gameplayScene.gameManager
+        local board = gm.board
+        local boardWidth = TILE_SIZE * board.cols
+        local boardHeight = TILE_SIZE * board.rows
+        
+        -- Draw a pulsing highlight effect around the whole board
+        local pulseAmount = 0.7 + math.sin(love.timer.getTime() * 5) * 0.3
+        love.graphics.setColor(0, 0.7, 0.7, pulseAmount * 0.3)  -- Cyan color for non-targeting spells
+        love.graphics.setLineWidth(3)
+        love.graphics.rectangle("line", 
+            boardX - 10, 
+            boardY - 10, 
+            boardWidth + 20, 
+            boardHeight + 20, 
+            10) -- Rounded corners
+        love.graphics.setLineWidth(1)
+        
+        -- Add a text hint
+        love.graphics.setFont(Theme.fonts.body)
+        love.graphics.setColor(1, 1, 1, pulseAmount)
+        love.graphics.printf(
+            "Click anywhere on the board to cast",
+            boardX, 
+            boardY + boardHeight + 10, 
+            boardWidth, 
+            "center"
+        )
+        
+        return
+    end
     
     -- Draw targeting indicator for each valid target
     for _, target in ipairs(self.validTargets) do
@@ -269,7 +308,10 @@ end
 --------------------------------------------------
 function TargetingSystem:drawPrompt()
     local promptMessage
-    if self.pendingEffectCard and self.pendingEffectCard.cardType == "Weapon" then
+    
+    if self.isNonTargetingEffect then
+        promptMessage = "Click anywhere on the board to cast " .. (self.pendingEffectCard and self.pendingEffectCard.name or "the spell")
+    elseif self.pendingEffectCard and self.pendingEffectCard.cardType == "Weapon" then
         promptMessage = "Select a minion to equip " .. (self.pendingEffectCard.name or "the weapon")
     else
         promptMessage = "Select a target for " .. (self.pendingEffectCard and self.pendingEffectCard.name or "the spell")
@@ -295,6 +337,14 @@ function TargetingSystem:selectTarget(x, y)
         local cellX = math.floor((x - boardX) / TILE_SIZE) + 1
         local cellY = math.floor((y - boardY) / TILE_SIZE) + 1
         
+        -- For non-targeting effects, any board click is valid
+        if self.isNonTargetingEffect then
+            return {
+                type = "board",
+                position = { x = cellX, y = cellY }
+            }
+        end
+        
         -- Check if this cell contains a valid target
         for _, target in ipairs(self.validTargets) do
             if target.position.x == cellX and target.position.y == cellY then
@@ -308,12 +358,60 @@ end
 
 --------------------------------------------------
 -- handleTargetingClick: Process click during targeting
+-- Modified to work with dragged card system
 --------------------------------------------------
 function TargetingSystem:handleTargetingClick(x, y)
     local target = self:selectTarget(x, y)
+    
+    -- Store a reference to the InputHandler for draggedCard management
+    local inputHandler = self.gameplayScene.inputHandler
+    
     if target then
+        -- For non-targeting effects that received a board click
+        if self.isNonTargetingEffect and target.type == "board" then
+            -- Apply the non-targeting effect (target is not used)
+            local success = EffectManager.applyEffectKey(
+                self.pendingEffect,
+                self.gameplayScene.gameManager,
+                self.gameplayScene.gameManager:getCurrentPlayer(),
+                nil,  -- No target needed
+                self.pendingEffectCard
+            )
+            
+            if success then
+                -- Spend mana for the card 
+                local currentPlayer = self.gameplayScene.gameManager:getCurrentPlayer()
+                currentPlayer:spendMana(self.pendingEffectCard.cost)
+                
+                -- Publish card played event
+                EventBus.publish(EventBus.Events.CARD_PLAYED, currentPlayer, self.pendingEffectCard)
+                
+                -- Clear the dragged card in InputHandler
+                if inputHandler and inputHandler.draggedCard then
+                    inputHandler.draggedCard = nil
+                    inputHandler.draggedCardIndex = nil
+                end
+            else
+                -- If the effect failed to apply, return the card to hand
+                -- Let InputHandler handle this
+                if inputHandler then
+                    inputHandler:cancelDraggedCard()
+                end
+                
+                -- Publish a card rejected event
+                EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "CardRejected", self.pendingEffectCard)
+            end
+            
+            -- Clear the pending effect state
+            self.pendingEffect = nil
+            self.pendingEffectCard = nil
+            self.pendingEffectCardIndex = nil
+            self.validTargets = {}
+            self.isNonTargetingEffect = false
+            return
+        end
+        
         -- Apply the pending effect with the selected target
-        local EffectManager = require("game.managers.effectmanager")
         local success = EffectManager.applyEffectKey(
             self.pendingEffect,
             self.gameplayScene.gameManager,
@@ -329,13 +427,18 @@ function TargetingSystem:handleTargetingClick(x, y)
             
             -- Publish card played event
             EventBus.publish(EventBus.Events.CARD_PLAYED, currentPlayer, self.pendingEffectCard)
+            
+            -- Clear the dragged card in InputHandler
+            if inputHandler and inputHandler.draggedCard then
+                inputHandler.draggedCard = nil
+                inputHandler.draggedCardIndex = nil
+            end
         else
-            -- If the effect failed to apply, put the card back in hand
-            table.insert(
-                self.gameplayScene.gameManager:getCurrentPlayer().hand, 
-                self.pendingEffectCardIndex, 
-                self.pendingEffectCard
-            )
+            -- If the effect failed to apply, return the card to hand
+            -- Let InputHandler handle this
+            if inputHandler then
+                inputHandler:cancelDraggedCard()
+            end
             
             -- Publish a card rejected event
             EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "CardRejected", self.pendingEffectCard)
@@ -346,6 +449,7 @@ function TargetingSystem:handleTargetingClick(x, y)
         self.pendingEffectCard = nil
         self.pendingEffectCardIndex = nil
         self.validTargets = {}
+        self.isNonTargetingEffect = false
         return
     end
     
@@ -360,12 +464,10 @@ function TargetingSystem:handleTargetingClick(x, y)
         y >= boardY and y < boardY + boardHeight) or
        require("game.scenes.gameplay.InputHandler").checkEndTurnHover(self.gameplayScene) then
         
-        -- Put the card back in hand
-        table.insert(
-            self.gameplayScene.gameManager:getCurrentPlayer().hand, 
-            self.pendingEffectCardIndex, 
-            self.pendingEffectCard
-        )
+        -- Let InputHandler handle returning the card to hand
+        if inputHandler then
+            inputHandler:cancelDraggedCard()
+        end
         
         -- Publish a targeting cancelled event
         EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "TargetingCancelled", self.pendingEffectCard)
@@ -375,6 +477,7 @@ function TargetingSystem:handleTargetingClick(x, y)
         self.pendingEffectCard = nil
         self.pendingEffectCardIndex = nil
         self.validTargets = {}
+        self.isNonTargetingEffect = false
     end
 end
 

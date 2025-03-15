@@ -162,6 +162,37 @@ function InputHandler:drawDraggedCard()
 end
 
 --------------------------------------------------
+-- setupDraggedCard: Common setup for dragged cards
+--------------------------------------------------
+function InputHandler:setupDraggedCard(card, index, cardX, cardY)
+    local cardWidth, cardHeight = CardRenderer.getCardDimensions()
+    
+    -- Store the card and its index
+    self.draggedCard = card
+    self.draggedCardIndex = index
+    card.dragging = true
+    
+    -- Set up card transform properties with physics
+    card.transform = { 
+        x = cardX, 
+        y = cardY, 
+        width = cardWidth, 
+        height = cardHeight 
+    }
+    card.target_transform = { x = cardX, y = cardY }
+    card.velocity = { x = 0, y = 0 }
+    card.rotation = 0  -- Add rotation property
+    
+    -- Play a card pickup sound effect
+    EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "CardPickedUp", card)
+    
+    -- Apply a "pop up" animation when card is selected
+    flux.to(card.transform, 0.2, { 
+        y = cardY - 20  -- Lift the card slightly
+    }):ease("backout")  -- Use a bounce effect
+end
+
+--------------------------------------------------
 -- handleMousePressed: Process mouse input
 --------------------------------------------------
 function InputHandler:handleMousePressed(x, y, button, istouch, presses)
@@ -202,14 +233,23 @@ function InputHandler:handleMousePressed(x, y, button, istouch, presses)
                 return
             end
             
+            -- Remove card from hand immediately (for all types)
+            table.remove(hand, i)
+            
             -- Handle card play based on type
             if card.cardType == "Weapon" then
-                -- Defer to targeting system
+                -- Set up dragged card visuals
+                self:setupDraggedCard(card, i, cardX, cardY)
+                
+                -- Defer to targeting system (will use dragged card visuals)
                 gameplay.targetingSystem:beginTargeting(card.effectKey, card, i)
                 return
                 
-            elseif card.cardType == "Spell" and card.effectKey and require("game.managers.effectmanager").requiresTarget(card.effectKey) then
-                -- Defer to targeting system
+            elseif card.cardType == "Spell" then
+                -- Set up dragged card visuals for spells too
+                self:setupDraggedCard(card, i, cardX, cardY)
+                
+                -- Defer to targeting system with dragged card visuals
                 gameplay.targetingSystem:beginTargeting(card.effectKey, card, i)
                 return
                 
@@ -217,46 +257,9 @@ function InputHandler:handleMousePressed(x, y, button, istouch, presses)
                 -- If it's a minion, set pendingSummon
                 gameplay.pendingSummon = { card = card, cardIndex = i, player = currentPlayer }
                 
-                -- Remove from hand and mark as dragged for drag-and-drop
-                self.draggedCard = card
-                self.draggedCardIndex = i
-                card.dragging = true
+                -- Set up dragged card visuals
+                self:setupDraggedCard(card, i, cardX, cardY)
                 
-                -- Set up card transform properties with physics
-                card.transform = { 
-                    x = cardX, 
-                    y = cardY, 
-                    width = cardWidth, 
-                    height = cardHeight 
-                }
-                card.target_transform = { x = cardX, y = cardY }
-                card.velocity = { x = 0, y = 0 }
-                card.rotation = 0  -- Add rotation property
-                
-                -- Play a card pickup sound effect
-                -- This is using the existing click sound for now, but could be custom
-                EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "CardPickedUp", card)
-                
-                -- Apply a "pop up" animation when card is selected
-                flux.to(card.transform, 0.2, { 
-                    y = cardY - 20  -- Lift the card slightly
-                }):ease("backout")  -- Use a bounce effect
-                
-                table.remove(hand, i)
-                return
-                
-            else
-                -- For non-targeting cards
-                local success = gm:playCardFromHand(currentPlayer, i)
-                
-                if success then
-                    -- Play card effect animation
-                    flux.to({scale = 1}, 0.3, {scale = 1.2})
-                        :after({scale = 1.2}, 0.1, {scale = 0})
-                        :oncomplete(function()
-                            -- This would be where we'd show the card effect visually
-                        end)
-                end
                 return
             end
         end
@@ -336,8 +339,8 @@ function InputHandler:handleBoardClick(x, y, boardX, boardY)
                 return
             end
         else
-            -- Non-minion drag-drop is not implemented
-            print("Cannot drop this card on the board. Try clicking the card from your hand.")
+            -- For spell/weapon cards, delegate to targeting system
+            -- The targeting system will handle the dragged card
             return
         end
     end
@@ -534,10 +537,35 @@ end
 
 --------------------------------------------------
 -- handleMouseReleased: Process mouse button release
+-- UPDATED: Added right-click to cancel card selection
 --------------------------------------------------
-function InputHandler:handleMouseReleased(x, y)
-    -- Currently no special handling needed for mouse release
-    -- Drag and drop is handled via clicks not drag/release
+function InputHandler:handleMouseReleased(x, y, button)
+    -- Check for right-click (button 2) to cancel selection
+    if button == 2 then
+        -- If we have a dragged card, cancel it and return to hand
+        if self.draggedCard then
+            -- Play a cancel sound effect if available
+            EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "CardSelectionCancelled")
+            
+            -- Return the card to hand
+            self:cancelDraggedCard()
+            
+            -- Also cancel any targeting that might be in progress
+            if self.gameplayScene.targetingSystem and 
+               self.gameplayScene.targetingSystem:hasPendingEffect() then
+                self.gameplayScene.targetingSystem:cancelTargeting()
+            end
+            
+            return true
+        end
+        
+        -- If we have a selected minion, deselect it
+        if self.gameplayScene.selectedMinion then
+            EventBus.publish(EventBus.Events.MINION_DESELECTED, self.gameplayScene.selectedMinion)
+            self.gameplayScene.selectedMinion = nil
+            return true
+        end
+    end
 end
 
 --------------------------------------------------

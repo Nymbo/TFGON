@@ -8,7 +8,7 @@
 -- - Card text area for effects (middle)
 -- - Archetype text (for minions) just above the card type banner
 -- - Card type at the very bottom (centered)
--- Now supports Glancing Blows effect text
+-- Now supports Glancing Blows effect
 
 local CardRenderer = {}
 
@@ -105,6 +105,7 @@ end
 -- getCardEffectText: Get appropriate text for card effects
 -- For Minions, only return battlecry/deathrattle text if present.
 -- Now supports Glancing Blows effect
+-- FIXED: Added specific descriptions for different spells
 --------------------------------------------------
 local function getCardEffectText(card)
     if card.cardType == "Minion" then
@@ -118,7 +119,14 @@ local function getCardEffectText(card)
             return ""  -- Do not show archetype here; it will be rendered separately
         end
     elseif card.cardType == "Spell" then
-        return "Deal 6 damage to enemy hero"
+        -- Return specific descriptions based on spell name
+        if card.name == "Fireball" then
+            return "Deal 6 damage to enemy tower"
+        elseif card.name == "Rapid Resupply" then
+            return "Draw 2 cards"
+        else
+            return "Cast a spell"  -- Default text for unknown spells
+        end
     elseif card.cardType == "Weapon" then
         return "Equip a " .. card.attack .. "/" .. card.durability .. " weapon"
     end

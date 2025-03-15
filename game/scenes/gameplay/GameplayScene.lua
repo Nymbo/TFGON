@@ -2,6 +2,7 @@
 -- Core gameplay scene that orchestrates all components
 -- Acts as the main entry point for the gameplay scene
 -- UPDATED: Removed legacy callbacks and banner system references
+-- UPDATED: Added proper right-click handling
 
 local GameManager = require("game.managers.gamemanager")
 local EventBus = require("game.eventbus")
@@ -345,11 +346,15 @@ end
 
 --------------------------------------------------
 -- mousereleased: Handle mouse button release
+-- UPDATED: Added support for right-click to cancel
 --------------------------------------------------
 function GameplayScene:mousereleased(x, y, button)
     -- Delegate to input handler
     if button == 1 then
-        self.inputHandler:handleMouseReleased(x, y)
+        self.inputHandler:handleMouseReleased(x, y, button)
+    elseif button == 2 then
+        -- Handle right-click to cancel card/minion selection
+        self.inputHandler:handleMouseReleased(x, y, button)
     end
 end
 
