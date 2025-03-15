@@ -130,6 +130,8 @@ local function getCardEffectText(card)
             return "Deal 1 damage to any target"
         elseif card.name == "Pyroblast" then
             return "Deal 10 damage to any target"
+        elseif card.name == "Holy Light" then
+            return "Restore 6 health"
         else
             return "Cast a spell"  -- Default text for unknown spells
         end

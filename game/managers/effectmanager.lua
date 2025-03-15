@@ -5,6 +5,7 @@
 -- Refactored to reduce duplicate code in weapon effects
 -- Now integrated with EventBus for decoupled architecture
 -- Fixed Fireball effect to use proper event parameters
+-- Added Holy Light healing effect
 
 local EffectManager = {}
 local EventBus = require("game.eventbus")  -- Import the EventBus
@@ -295,6 +296,81 @@ local effectRegistry = {
                 
                 -- Publish spell cast failed event
                 EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "SpellCastFailed", player, "Pyroblast")
+                
+                return false
+            end
+        end
+    },
+
+    -- New effect: Holy Light
+    HolyLightEffect = {
+        requiresTarget = true,
+        targetType = "AnyTarget",
+        effectFn = function(gameManager, player, target, card)
+            -- Heal 6 health to the target (minion or tower)
+            local healAmount = 6  -- Holy Light healing amount
+            
+            if target.currentHealth then
+                -- Target is a minion
+                
+                -- Store old health for event
+                local oldHealth = target.currentHealth
+                
+                -- Use the board's healMinion method to heal
+                local success = gameManager.board:healMinion(target, healAmount, nil)
+                
+                if success then
+                    -- Publish spell cast event for animation and other listeners
+                    EventBus.publish(EventBus.Events.SPELL_CAST, player, "Holy Light", target)
+                    
+                    print("Holy Light restored " .. healAmount .. " health to " .. target.name)
+                    return true
+                else
+                    print("Warning: Target is already at full health")
+                    return false
+                end
+            elseif target.hp then
+                -- Target is a tower
+                -- Store old health for event
+                local oldHealth = target.hp
+                
+                -- Calculate new health (cap at maxHp)
+                local newHealth = math.min(target.maxHp or 30, oldHealth + healAmount)
+                
+                -- Only proceed if there's actual healing to be done
+                if newHealth > oldHealth then
+                    -- Update tower health
+                    target.hp = newHealth
+                    
+                    -- Publish tower healed event
+                    EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "TowerHealed",
+                        target,      -- The tower being healed
+                        nil,         -- No healer (spell effect)
+                        healAmount,  -- Amount of healing
+                        oldHealth,   -- Old health
+                        newHealth    -- New health
+                    )
+                    
+                    print("Holy Light restored " .. (newHealth - oldHealth) .. " health to a tower!")
+                    
+                    -- Publish spell cast event for animation and other listeners
+                    EventBus.publish(EventBus.Events.SPELL_CAST, player, "Holy Light", target)
+                    
+                    return true
+                else
+                    print("Warning: Tower is already at full health")
+                    
+                    -- Publish spell cast failed event
+                    EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "SpellCastFailed", player, "Holy Light")
+                    
+                    return false
+                end
+            else
+                -- Invalid target
+                print("Warning: Holy Light effect called without valid target")
+                
+                -- Publish spell cast failed event
+                EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "SpellCastFailed", player, "Holy Light")
                 
                 return false
             end

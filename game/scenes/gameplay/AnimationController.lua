@@ -1,6 +1,7 @@
 -- game/scenes/gameplay/AnimationController.lua
 -- Manages animations during gameplay
 -- Handles animation queuing, sequencing, and feedback
+-- Added support for Holy Light healing spell
 
 local EventBus = require("game.eventbus")
 local ErrorLog = require("game.utils.errorlog")
@@ -138,6 +139,22 @@ function AnimationController:initEventSubscriptions()
         "AnimationController-TowerDamage"
     ))
     
+    -- Add subscription for tower healing events
+    table.insert(self.eventSubscriptions, EventBus.subscribe(
+        EventBus.Events.EFFECT_TRIGGERED,
+        function(effectType, tower, source, amount, oldHealth, newHealth)
+            if effectType == "TowerHealed" and tower and tower.position then
+                -- Add to animation queue
+                self:queueAnimation("towerHeal", {
+                    tower = tower,
+                    amount = amount,
+                    position = {x = tower.position.x, y = tower.position.y}
+                })
+            end
+        end,
+        "AnimationController-TowerHeal"
+    ))
+    
     table.insert(self.eventSubscriptions, EventBus.subscribe(
         EventBus.Events.MINION_MOVED,
         function(minion, oldPosition, newPosition)
@@ -234,9 +251,19 @@ function AnimationController:playAnimation(animType, data)
         elseif data.spellName == "Arcane Shot" and data.target and data.target.position then
             AnimationManager:playAnimation("Arcane Shot", data.target.position.x, data.target.position.y)
             self.gameplayScene.waitingForAnimation = true
+        elseif data.spellName == "Moonfire" and data.target and data.target.position then
+            AnimationManager:playAnimation("Moonfire", data.target.position.x, data.target.position.y)
+            self.gameplayScene.waitingForAnimation = true
+        elseif data.spellName == "Pyroblast" and data.target and data.target.position then
+            AnimationManager:playAnimation("Pyroblast", data.target.position.x, data.target.position.y)
+            self.gameplayScene.waitingForAnimation = true
+        elseif data.spellName == "Holy Light" and data.target and data.target.position then
+            -- Use Fireball animation for Holy Light for now
+            AnimationManager:playAnimation("Fireball", data.target.position.x, data.target.position.y)
+            self.gameplayScene.waitingForAnimation = true
         end
     elseif animType == "damage" or animType == "heal" or animType == "death" or 
-           animType == "movement" or animType == "towerDamage" then
+           animType == "movement" or animType == "towerDamage" or animType == "towerHeal" then
         -- These will be implemented as AnimationManager capabilities expand
     end
     

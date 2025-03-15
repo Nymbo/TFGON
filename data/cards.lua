@@ -3,6 +3,7 @@
 -- Weapons now have archetypeRequirement to indicate which minions can equip them.
 -- Now integrating with EventBus for better effect handling
 -- Added Street Fighter with Glancing Blows effect
+-- Added Holy Light healing spell
 
 local EventBus = require("game.eventbus")  -- Import EventBus
 
@@ -191,6 +192,13 @@ return {
         cardType = "Spell",
         cost = 10,
         effectKey = "PyroblastEffect"
+    },
+    -- New Spell Card: Holy Light
+    {
+        name = "Holy Light",
+        cardType = "Spell",
+        cost = 2,
+        effectKey = "HolyLightEffect"
     },
 
     --------------------------------------------------

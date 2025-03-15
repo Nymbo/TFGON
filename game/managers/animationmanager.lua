@@ -1,6 +1,7 @@
 -- game/managers/animationmanager.lua
 -- Manages and plays animations in the game using anim8 library
 -- Fully integrated with the EventBus system
+-- Added Holy Light animation reference
 
 local AnimationManager = {}
 AnimationManager.__index = AnimationManager
@@ -76,6 +77,14 @@ AnimationManager.animationRegistry = {
         offset = {x = 0, y = 0},
         scale = "auto",
         soundEffect = "pyroblast" -- Optional: different sound effect if available
+    },
+    ["Holy Light"] = {  -- Add Holy Light animation
+        spritesheet = "explosion", -- Using the same explosion sprite for now
+        framerate = 0.1,
+        loop = false,
+        offset = {x = 0, y = 0},
+        scale = "auto",
+        soundEffect = "holy_light" -- Optional: different sound effect if available
     }
 }
 
@@ -144,6 +153,27 @@ function AnimationManager:initEventSubscriptions()
                     posX, posY = target.position.x, target.position.y
                     self:playAnimation("Arcane Shot", posX, posY)
                 end
+            elseif spellName == "Moonfire" and target then
+                -- Handle Moonfire animation
+                local posX, posY
+                if target.position then
+                    posX, posY = target.position.x, target.position.y
+                    self:playAnimation("Moonfire", posX, posY)
+                end
+            elseif spellName == "Pyroblast" and target then
+                -- Handle Pyroblast animation
+                local posX, posY
+                if target.position then
+                    posX, posY = target.position.x, target.position.y
+                    self:playAnimation("Pyroblast", posX, posY)
+                end
+            elseif spellName == "Holy Light" and target then
+                -- Handle Holy Light animation
+                local posX, posY
+                if target.position then
+                    posX, posY = target.position.x, target.position.y
+                    self:playAnimation("Holy Light", posX, posY)
+                end
             end
         end,
         "AnimationManager-SpellCast"
@@ -169,6 +199,26 @@ function AnimationManager:initEventSubscriptions()
     
     -- For future animations based on different events
     -- Add more event subscriptions here
+    
+    -- Listen for minion healing events
+    table.insert(self.eventSubscriptions, EventBus.subscribe(
+        EventBus.Events.MINION_HEALED,
+        function(minion, source, amount, oldHealth, newHealth)
+            -- Will implement healing animations later
+        end,
+        "AnimationManager-MinionHealed"
+    ))
+    
+    -- Listen for tower healing events
+    table.insert(self.eventSubscriptions, EventBus.subscribe(
+        EventBus.Events.EFFECT_TRIGGERED,
+        function(effectType, tower, source, amount, oldHealth, newHealth)
+            if effectType == "TowerHealed" then
+                -- Will implement tower healing animations later
+            end
+        end,
+        "AnimationManager-TowerHealed"
+    ))
 end
 
 --------------------------------------------------
