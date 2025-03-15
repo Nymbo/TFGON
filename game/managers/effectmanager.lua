@@ -6,6 +6,7 @@
 -- Now integrated with EventBus for decoupled architecture
 -- Fixed Fireball effect to use proper event parameters
 -- Added Holy Light healing effect
+-- Added Shiv and Sprint effects
 
 local EffectManager = {}
 local EventBus = require("game.eventbus")  -- Import the EventBus
@@ -374,6 +375,80 @@ local effectRegistry = {
                 
                 return false
             end
+        end
+    },
+
+    -- New effect: Shiv
+    ShivEffect = {
+        requiresTarget = true,
+        targetType = "AnyTarget",
+        effectFn = function(gameManager, player, target, card)
+            -- Deal 1 damage to the target (minion or tower)
+            local damage = 1  -- Shiv damage
+            
+            if target.currentHealth then
+                -- Target is a minion
+                gameManager.board:applyDamageToMinion(target, damage, nil)
+                
+                -- Draw a card
+                player:drawCard(1)
+                
+                -- Publish spell cast event for animation and other listeners
+                EventBus.publish(EventBus.Events.SPELL_CAST, player, "Shiv", target)
+                
+                print("Shiv dealt " .. damage .. " damage to " .. target.name .. " and drew a card")
+                return true
+            elseif target.hp then
+                -- Target is a tower
+                -- Store old health for event
+                local oldHealth = target.hp
+                
+                -- Calculate new health
+                local newHealth = oldHealth - damage
+                
+                -- IMPORTANT: Directly update the tower's health for fallback
+                target.hp = newHealth
+                
+                -- Publish tower damaged event with proper parameters
+                EventBus.publish(EventBus.Events.TOWER_DAMAGED, 
+                    target,      -- The tower being damaged
+                    nil,         -- No attacker (spell damage)
+                    damage,      -- Amount of damage (1)
+                    oldHealth,   -- Health before damage
+                    newHealth    -- Health after damage
+                )
+                
+                -- Draw a card
+                player:drawCard(1)
+                
+                print("Shiv dealt " .. damage .. " damage to a tower and drew a card!")
+                
+                -- Publish spell cast event for animation and other listeners
+                EventBus.publish(EventBus.Events.SPELL_CAST, player, "Shiv", target)
+                
+                return true
+            else
+                -- Invalid target
+                print("Warning: Shiv effect called without valid target")
+                
+                -- Publish spell cast failed event
+                EventBus.publish(EventBus.Events.EFFECT_TRIGGERED, "SpellCastFailed", player, "Shiv")
+                
+                return false
+            end
+        end
+    },
+
+    -- New effect: Sprint
+    SprintEffect = {
+        requiresTarget = false,  -- This spell does not require a target
+        effectFn = function(gameManager, player, target, card)
+            -- Draw 4 cards for the player
+            player:drawCard(4)
+            print(player.name .. " used Sprint and drew 4 cards!")
+            -- Publish spell cast event for logging/other listeners
+            EventBus.publish(EventBus.Events.SPELL_CAST, player, "Sprint", target)
+            return true
         end
     },
 

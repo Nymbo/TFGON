@@ -4,6 +4,7 @@
 -- Now integrating with EventBus for better effect handling
 -- Added Street Fighter with Glancing Blows effect
 -- Added Holy Light healing spell
+-- Added Shiv and Sprint spell cards
 
 local EventBus = require("game.eventbus")  -- Import EventBus
 
@@ -199,6 +200,20 @@ return {
         cardType = "Spell",
         cost = 2,
         effectKey = "HolyLightEffect"
+    },
+    -- New Spell Card: Shiv
+    {
+        name = "Shiv",
+        cardType = "Spell",
+        cost = 2,
+        effectKey = "ShivEffect"
+    },
+    -- New Spell Card: Sprint
+    {
+        name = "Sprint",
+        cardType = "Spell",
+        cost = 7,
+        effectKey = "SprintEffect"
     },
 
     --------------------------------------------------

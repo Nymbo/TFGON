@@ -2,6 +2,7 @@
 -- Manages animations during gameplay
 -- Handles animation queuing, sequencing, and feedback
 -- Added support for Holy Light healing spell
+-- Added support for Shiv and Sprint spells
 
 local EventBus = require("game.eventbus")
 local ErrorLog = require("game.utils.errorlog")
@@ -261,6 +262,13 @@ function AnimationController:playAnimation(animType, data)
             -- Now properly use the Holy Light animation with bloom spritesheet
             AnimationManager:playAnimation("Holy Light", data.target.position.x, data.target.position.y)
             self.gameplayScene.waitingForAnimation = true
+        elseif data.spellName == "Shiv" and data.target and data.target.position then
+            -- Use Fireball animation for Shiv (as requested)
+            AnimationManager:playAnimation("Fireball", data.target.position.x, data.target.position.y)
+            self.gameplayScene.waitingForAnimation = true
+        elseif data.spellName == "Sprint" then
+            -- No animation for Sprint (similar to Rapid Resupply)
+            self.gameplayScene.waitingForAnimation = false
         end
     elseif animType == "damage" or animType == "heal" or animType == "death" or 
            animType == "movement" or animType == "towerDamage" or animType == "towerHeal" then
