@@ -1,7 +1,7 @@
 -- game/managers/animationmanager.lua
 -- Manages and plays animations in the game using anim8 library
 -- Fully integrated with the EventBus system
--- Added Holy Light animation reference
+-- Added Holy Light animation with bloom spritesheet
 
 local AnimationManager = {}
 AnimationManager.__index = AnimationManager
@@ -78,13 +78,13 @@ AnimationManager.animationRegistry = {
         scale = "auto",
         soundEffect = "pyroblast" -- Optional: different sound effect if available
     },
-    ["Holy Light"] = {  -- Add Holy Light animation
-        spritesheet = "explosion", -- Using the same explosion sprite for now
-        framerate = 0.1,
+    ["Holy Light"] = {  -- Update Holy Light animation to use bloom spritesheet
+        spritesheet = "bloom", -- Using the bloom spritesheet
+        framerate = 0.07, -- Slightly faster animation 
         loop = false,
         offset = {x = 0, y = 0},
         scale = "auto",
-        soundEffect = "holy_light" -- Optional: different sound effect if available
+        soundEffect = "holy_light"
     }
 }
 
@@ -168,7 +168,7 @@ function AnimationManager:initEventSubscriptions()
                     self:playAnimation("Pyroblast", posX, posY)
                 end
             elseif spellName == "Holy Light" and target then
-                -- Handle Holy Light animation
+                -- Handle Holy Light animation with bloom spritesheet
                 local posX, posY
                 if target.position then
                     posX, posY = target.position.x, target.position.y
@@ -256,12 +256,34 @@ function AnimationManager:loadResources()
         allResourcesLoaded = false
     end
     
-    -- If we failed to load the image, don't try to create animations from it
-    if not self.resources.images.explosion then
+    -- Try loading the bloom image for Holy Light
+    local bloomPath = "assets/images/bloom.png"
+    if love.filesystem.getInfo(bloomPath) then
+        Debug.info("Loading bloom image from " .. bloomPath)
+        
+        -- Use pcall to catch any loading errors
+        local success, result = pcall(function()
+            return love.graphics.newImage(bloomPath)
+        end)
+        
+        if success then
+            self.resources.images.bloom = result
+            Debug.info("Bloom image loaded successfully")
+        else
+            Debug.error("Failed to load bloom image: " .. tostring(result))
+            allResourcesLoaded = false
+        end
+    else
+        Debug.error("Bloom image file not found at " .. bloomPath)
+        allResourcesLoaded = false
+    end
+    
+    -- If we failed to load the images, don't try to create animations from them
+    if not self.resources.images.explosion or not self.resources.images.bloom then
         return false
     end
     
-    -- Try creating animation grid
+    -- Try creating explosion animation grid
     local success, result = pcall(function()
         -- Create grid for the explosion (9 frames horizontally, each 192x192 pixels)
         return anim8.newGrid(192, 192, 1728, 192)
@@ -275,7 +297,21 @@ function AnimationManager:loadResources()
         allResourcesLoaded = false
     end
     
-    -- Try creating the animation
+    -- Try creating bloom animation grid (15x9 grid of 64x64 images)
+    success, result = pcall(function()
+        -- Create grid for the bloom image (15x9 grid of 64x64 pixels)
+        return anim8.newGrid(64, 64, 960, 576)
+    end)
+    
+    if success then
+        self.resources.grids.bloom = result
+        Debug.info("Bloom grid created successfully")
+    else
+        Debug.error("Failed to create bloom grid: " .. tostring(result))
+        allResourcesLoaded = false
+    end
+    
+    -- Try creating the explosion animation
     success, result = pcall(function()
         -- Create explosion animation (9 frames, once)
         return anim8.newAnimation(
@@ -293,6 +329,27 @@ function AnimationManager:loadResources()
         Debug.info("Explosion animation created successfully")
     else
         Debug.error("Failed to create explosion animation: " .. tostring(result))
+        allResourcesLoaded = false
+    end
+    
+    -- Try creating the bloom animation (4th row, 15 frames from left to right)
+    success, result = pcall(function()
+        -- Create bloom animation (15 frames, from 4th row only)
+        return anim8.newAnimation(
+            self.resources.grids.bloom('1-15', 4), -- 1-15 for all columns, row 4
+            0.07, -- 0.07 seconds per frame (slightly faster than explosion)
+            function(anim) -- onLoop callback
+                anim:pauseAtEnd() -- Stop on the last frame
+                EventBus.publish(EventBus.Events.ANIMATION_COMPLETED, "Holy Light")
+            end
+        )
+    end)
+    
+    if success then
+        self.resources.animations.bloom = result
+        Debug.info("Bloom animation created successfully")
+    else
+        Debug.error("Failed to create bloom animation: " .. tostring(result))
         allResourcesLoaded = false
     end
     
@@ -341,7 +398,11 @@ function AnimationManager:playAnimation(animationType, gridX, gridY)
     -- Calculate scale (if auto)
     local scale = 1
     if config.scale == "auto" then
-        scale = tileSize / 192 -- For explosion, adapt to tile size
+        if config.spritesheet == "explosion" then
+            scale = tileSize / 192 -- For explosion, adapt to tile size
+        elseif config.spritesheet == "bloom" then
+            scale = tileSize / 64 -- For bloom, adapt to tile size (64x64 frames)
+        end
     else
         scale = config.scale
     end
@@ -437,6 +498,15 @@ function AnimationManager:draw()
         -- Use pcall to catch any drawing errors
         local success, err = pcall(function()
             -- Draw the animation
+            local frameWidth, frameHeight
+            
+            -- Set origin based on spritesheet type
+            if anim.type == "Holy Light" then
+                frameWidth, frameHeight = 64, 64 -- Bloom frames are 64x64
+            else
+                frameWidth, frameHeight = 192, 192 -- Explosion frames are 192x192
+            end
+            
             anim.animation:draw(
                 anim.image,
                 anim.x,
@@ -444,8 +514,8 @@ function AnimationManager:draw()
                 0, -- rotation
                 anim.scale, -- scale x
                 anim.scale, -- scale y
-                192/2, -- origin x (center of frame)
-                192/2  -- origin y (center of frame)
+                frameWidth/2, -- origin x (center of frame)
+                frameHeight/2  -- origin y (center of frame)
             )
         end)
         

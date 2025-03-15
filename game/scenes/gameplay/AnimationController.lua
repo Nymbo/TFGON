@@ -258,8 +258,8 @@ function AnimationController:playAnimation(animType, data)
             AnimationManager:playAnimation("Pyroblast", data.target.position.x, data.target.position.y)
             self.gameplayScene.waitingForAnimation = true
         elseif data.spellName == "Holy Light" and data.target and data.target.position then
-            -- Use Fireball animation for Holy Light for now
-            AnimationManager:playAnimation("Fireball", data.target.position.x, data.target.position.y)
+            -- Now properly use the Holy Light animation with bloom spritesheet
+            AnimationManager:playAnimation("Holy Light", data.target.position.x, data.target.position.y)
             self.gameplayScene.waitingForAnimation = true
         end
     elseif animType == "damage" or animType == "heal" or animType == "death" or 
